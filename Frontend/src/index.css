@@ -1,0 +1,48 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --brand-navy: #082744;
+  --brand-navy-2: #123a5c;
+  --brand-red: #d7193f;
+  --brand-red-dark: #b61234;
+  --brand-white: #ffffff;
+  --brand-bg: #f4f7fa;
+  --brand-bg-soft: #eaf0f5;
+  --brand-border: #ced9e3;
+  --text-primary: #082744;
+  --text-secondary: #5d7081;
+  --shadow-soft: 0 16px 40px rgba(8,39,68,.12);
+  --shadow-card: 0 8px 24px rgba(8,39,68,.08);
+
+  --brand-ink: var(--brand-navy);
+  --brand-black: var(--brand-navy);
+  --brand-charcoal: var(--brand-navy-2);
+  --brand-copper: var(--brand-red);
+  --brand-copper-dark: var(--brand-red-dark);
+  --brand-orange: var(--brand-red);
+  --brand-orange-dark: var(--brand-red-dark);
+  --brand-gold: var(--brand-red);
+  --brand-gold-dark: var(--brand-red-dark);
+  --brand-cream: var(--brand-bg);
+  --brand-cream-soft: var(--brand-bg);
+  --brand-warm: var(--brand-bg-soft);
+  --brand-surface: #fff;
+  --brand-surface-soft: var(--brand-bg-soft);
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{min-height:100%;width:100%;overflow-x:auto;overflow-y:auto}
+body{font-family:'Inter',sans-serif;background:var(--brand-bg);color:var(--text-primary);-webkit-font-smoothing:antialiased}
+#root{min-height:100vh;display:flex;flex-direction:column}
+a{color:inherit}button,input,select{font:inherit}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-track{background:var(--brand-bg-soft)}
+::-webkit-scrollbar-thumb{background:var(--brand-navy);border-radius:999px}
+::-webkit-scrollbar-thumb:hover{background:var(--brand-red)}
+.container{max-width:1400px;margin:0 auto;padding:0 1rem}.text-center{text-align:center}.text-muted{color:var(--text-secondary)}
+.btn{padding:.8rem 1.5rem;border:none;border-radius:8px;font-weight:700;cursor:pointer;transition:.2s;display:inline-flex;align-items:center;justify-content:center;gap:.5rem}
+.btn-primary{background:var(--brand-red);color:#fff}.btn-primary:hover{background:var(--brand-red-dark);transform:translateY(-1px)}
+.btn-secondary{background:#fff;color:var(--brand-navy);border:1px solid var(--brand-navy)}.btn-secondary:hover{background:var(--brand-navy);color:#fff;transform:translateY(-1px)}
+.btn:disabled{opacity:.65;cursor:not-allowed;transform:none!important}
+.card{background:#fff;border:1px solid var(--brand-border);border-radius:14px;padding:1.5rem;box-shadow:var(--shadow-card)}
+.main-content{flex:1}

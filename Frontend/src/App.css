@@ -1,0 +1,6 @@
+.app,
+.app-content,
+.app-wrapper {
+  min-height: 100vh;
+  width: 100%;
+}
