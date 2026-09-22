@@ -11,10 +11,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Add Microsoft package repository
-RUN curl -sSL -O https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb \
+RUN curl -sSL -O https://packages.microsoft.com/config/debian/13/packages-microsoft-prod.deb \
     && dpkg -i packages-microsoft-prod.deb \
     && rm packages-microsoft-prod.deb
-
+    
 # Install Microsoft ODBC Driver 18
 RUN ACCEPT_EULA=Y apt-get update \
     && ACCEPT_EULA=Y apt-get install -y msodbcsql18 \
