@@ -8,7 +8,7 @@ warnings.filterwarnings('ignore', category=UserWarning, module='pandas')
 def get_db_connection():
     """Establishes a connection to Microsoft Fabric Data Warehouse using a Service Principal."""
     conn_str = (
-        f"DRIVER={{{settings.DB_DRIVER}}};"
+        f"DRIVER={settings.DB_DRIVER};"
         f"SERVER={settings.FABRIC_SERVER};"
         f"DATABASE={settings.FABRIC_DATABASE};"
         f"UID={settings.CLIENT_ID};"
