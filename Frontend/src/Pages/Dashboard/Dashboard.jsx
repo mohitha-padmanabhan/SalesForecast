@@ -61,13 +61,14 @@ function makeDynamicRows(plan) {
         kind = 'Forecast';
         value = forecastsArr[idx] ?? 0;
       } else {
-        // Current Year Logic (Actuals for Jan-Jul [months 0-6], Forecasts for Aug-Dec [months 7-11])
-        if (idx < 7) {
+        // Current Year Logic: completed months are Actuals; current/future months are Forecasts
+        const currentMonthIndex = new Date().getMonth(); // Jan=0, Sep=8
+        if (idx < currentMonthIndex) {
           kind = 'Actual';
           value = actualsArr[idx] ?? 0;
         } else {
           kind = 'Forecast';
-          value = forecastsArr[idx - 7] ?? 0;
+          value = forecastsArr[idx - currentMonthIndex] ?? 0;
         }
       }
 
