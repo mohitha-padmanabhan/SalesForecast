@@ -12,6 +12,21 @@ import './Dashboard.css';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
+const roundDisplayValue = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  const rounded = Math.round(numeric);
+  return Object.is(rounded, -0) ? 0 : rounded;
+};
+
+const formatDisplayNumber = (value) => {
+  return roundDisplayValue(value).toLocaleString('en-US');
+};
+
+const formatDisplayPercent = (value) => {
+  return `${roundDisplayValue(value).toLocaleString('en-US')}%`;
+};
+
 const COMBINATION_OPTIONS = [
   { value: 'actual_forecast', label: 'Actuals + Forecasts' },
   { value: 'actual_only', label: 'Actuals Only' },
@@ -220,7 +235,9 @@ function Dashboard() {
         const data = await fetchFilterOptions({
           state: filters.state,
           chainStatus: filters.chainStatus,
-          premiseType: filters.premiseType
+          premiseType: filters.premiseType,
+          brandType: filters.brandType,
+          dateVersion: filters.dateVersion
         });
 
         setFilterOptions(prev => {
@@ -232,12 +249,16 @@ function Dashboard() {
             states: data.states && data.states.length > 0 ? data.states : prev.states,
             chainStatuses: data.chain_statuses && data.chain_statuses.length > 0 ? data.chain_statuses : prev.chainStatuses,
             premiseTypes: updatedPremiseTypes.length > 0 ? updatedPremiseTypes : prev.premiseTypes,
-            topChains: updatedTopChains.length > 0 ? updatedTopChains : prev.topChains
+            topChains: updatedTopChains
           };
         });
 
-        if (filters.chainStatus === 'INDEPENDENT' && filters.topChain !== 'Other') {
-          setFilters(prev => ({ ...prev, topChain: 'Other' }));
+        if (filters.chainStatus === 'INDEPENDENT') {
+          if (filters.topChain !== 'Other') {
+            setFilters(prev => ({ ...prev, topChain: 'Other' }));
+          }
+        } else if (filters.topChain !== 'All' && !(data.top_chains || []).includes(filters.topChain)) {
+          setFilters(prev => ({ ...prev, topChain: 'All' }));
         }
       } catch (err) {
         console.error('Failed to update cascading filters:', err);
@@ -245,7 +266,7 @@ function Dashboard() {
     };
 
     updateCascadingFilters();
-  }, [filters.state, filters.chainStatus, filters.premiseType, initialLoading]);
+  }, [filters.state, filters.chainStatus, filters.premiseType, filters.brandType, filters.dateVersion, filters.topChain, initialLoading]);
 
   // Dynamic Fetching of Existing Plan IDs for Modal
   useEffect(() => {
@@ -707,9 +728,7 @@ function Dashboard() {
                 onClick={() => choosePlan(plan)} 
                 className={`plan-card ${selectedId === plan.planning_id ? 'selected' : ''}`}
               >
-                <div className="plan-id-tag">ID: {plan.planning_id}</div>
-                <strong>{plan.brand}</strong>
-                <span>{plan.state} · {plan.premise_type}</span>
+                <div className="plan-id-tag">{plan.planning_id}</div>
               </button>
             ))}
             {(!gridData.length || !isAnyFilterSelected) && !initialLoading && (
@@ -738,10 +757,10 @@ function Dashboard() {
             </div>
 
             <div className="summary-strip">
-              <Metric label={`Actuals ${currentDynamicYear}`} value={actualCurrentYear.toFixed(1)} suffix="9L" />
-              <Metric label={`Forecast ${currentDynamicYear}`} value={forecastCurrentYear.toFixed(1)} suffix="9L" />
-              <Metric label={`${currentDynamicYear} Total`} value={yearTotal.toFixed(1)} suffix="9L" emphasize />
-              <Metric label="Annual Target" value={annualTarget.toFixed(1)} suffix="9L" />
+              <Metric label={`Actuals ${currentDynamicYear}`} value={formatDisplayNumber(actualCurrentYear)} suffix="9L" />
+              <Metric label={`Forecast ${currentDynamicYear}`} value={formatDisplayNumber(forecastCurrentYear)} suffix="9L" />
+              <Metric label={`${currentDynamicYear} Total`} value={formatDisplayNumber(yearTotal)} suffix="9L" emphasize />
+              <Metric label="Annual Target" value={formatDisplayNumber(annualTarget)} suffix="9L" />
             </div>
 
             <div className="forecast-view-controls">
@@ -871,6 +890,7 @@ function Dashboard() {
 
                     const budgetRows = yearRows.filter(r => r.budgetVal !== null);
                     const budgetTotal = budgetRows.reduce((s, r) => s + (r.budgetVal || 0), 0);
+                    const isCurrentYear = year === currentDynamicYear;
 
                     const showMainRow = isRowVisible('Actual', 'main') || isRowVisible('Forecast', 'main');
                     const showPrevRow = isRowVisible('', 'pre_forecast') && prevForecastRows.length > 0;
@@ -885,12 +905,21 @@ function Dashboard() {
                       })
                       .reduce((s, r) => s + r.value, 0);
 
+                    // Variance is intentionally based on the same rounded values shown in the UI.
+                    // This keeps displayed equations consistent, e.g. 138 - 130 = 8.
+                    const displayedBudgetTotal = roundDisplayValue(budgetTotal);
+                    const displayedConsensusTotal = roundDisplayValue(mainTotal);
+                    const varianceTotal = displayedBudgetTotal - displayedConsensusTotal;
+                    const variancePercentTotal = displayedBudgetTotal !== 0
+                      ? (varianceTotal / displayedBudgetTotal) * 100
+                      : 0;
+
                     return (
                       <React.Fragment key={year}>
                         {showMainRow && (
                           <tr>
                             <th className="year-cell">
-                              {year === currentDynamicYear ? `Consensus (${year})` : year}
+                              {year === currentDynamicYear || year === currentDynamicYear + 1 ? `Consensus (${year})` : year}
                             </th>
                             {MONTHS.map((month, idx) => {
                               const row = yearRows.find(r => r.monthIndex === idx);
@@ -902,7 +931,7 @@ function Dashboard() {
                                   <span className={`cell-tag ${row.kind.toLowerCase()}`}>{row.kind === 'Actual' ? 'Actuals' : 'Forecast'}</span>
                                   {row.kind === 'Forecast' && planType === 'month' ?
                                     <input aria-label={`${month} ${year} Forecast`} type="number" step="0.01" min="0" value={row.value} onChange={e => changeForecast(row.key, e.target.value)} />
-                                    : <strong>{row.value.toFixed(2)}</strong>}
+                                    : <strong>{formatDisplayNumber(row.value)}</strong>}
                                 </td>
                               );
                             })}
@@ -925,7 +954,7 @@ function Dashboard() {
                                   }}
                                 />
                               ) : (
-                                <strong>{mainTotal.toFixed(2)}</strong>
+                                <strong>{formatDisplayNumber(mainTotal)}</strong>
                               )}
                               <span>Total 9L</span>
                             </td>
@@ -943,14 +972,14 @@ function Dashboard() {
                                   {prevVal !== null ? (
                                     <>
                                       <span className="cell-tag previous">Stat-Fcst</span>
-                                      <span className="prev-value">{prevVal.toFixed(2)}</span>
+                                      <span className="prev-value">{formatDisplayNumber(prevVal)}</span>
                                     </>
                                   ) : <span>—</span>}
                                 </td>
                               );
                             })}
                             <td className="year-total prev-total">
-                              <strong>{prevTotal.toFixed(2)}</strong>
+                              <strong>{formatDisplayNumber(prevTotal)}</strong>
                               <span>Statistical Forecast</span>
                             </td>
                           </tr>
@@ -958,7 +987,7 @@ function Dashboard() {
 
                         {showBudgetRow && (
                           <tr className="budget-row">
-                            <th className="year-cell budget-label">Budget ({year})</th>
+                            <th className="year-cell budget-label">{year === currentDynamicYear + 1 ? `Prelims (${year})` : `Budget (${year})`}</th>
                             {MONTHS.map((month, idx) => {
                               const row = yearRows.find(r => r.monthIndex === idx);
                               const bVal = row ? row.budgetVal : null;
@@ -967,15 +996,61 @@ function Dashboard() {
                                   {bVal !== null ? (
                                     <>
                                       <span className="cell-tag budget">Budget</span>
-                                      <span className="budget-value">{bVal.toFixed(2)}</span>
+                                      <span className="budget-value">{formatDisplayNumber(bVal)}</span>
                                     </>
                                   ) : <span>—</span>}
                                 </td>
                               );
                             })}
                             <td className="year-total budget-total">
-                              <strong>{budgetTotal.toFixed(2)}</strong>
+                              <strong>{formatDisplayNumber(budgetTotal)}</strong>
                               <span>Budget</span>
+                            </td>
+                          </tr>
+                        )}
+
+                        {isCurrentYear && budgetRows.length > 0 && (
+                          <tr className="variance-row">
+                            <th className="year-cell variance-label">Variance ({year})</th>
+                            {MONTHS.map((month, idx) => {
+                              const row = yearRows.find(r => r.monthIndex === idx);
+                              const bVal = row?.budgetVal;
+                              const displayedBudget = bVal !== null && bVal !== undefined ? roundDisplayValue(bVal) : null;
+                              const displayedConsensus = roundDisplayValue(row?.value || 0);
+                              const variance = displayedBudget !== null ? displayedBudget - displayedConsensus : null;
+                              return (
+                                <td key={`variance-${year}-${month}`} className="variance-cell">
+                                  {variance !== null ? <strong>{formatDisplayNumber(variance)}</strong> : <span>—</span>}
+                                </td>
+                              );
+                            })}
+                            <td className="year-total variance-total">
+                              <strong>{formatDisplayNumber(varianceTotal)}</strong>
+                              <span>Budget - Consensus</span>
+                            </td>
+                          </tr>
+                        )}
+
+                        {isCurrentYear && budgetRows.length > 0 && (
+                          <tr className="variance-percent-row">
+                            <th className="year-cell variance-percent-label">Variance % ({year})</th>
+                            {MONTHS.map((month, idx) => {
+                              const row = yearRows.find(r => r.monthIndex === idx);
+                              const bVal = row?.budgetVal;
+                              const displayedBudget = bVal !== null && bVal !== undefined ? roundDisplayValue(bVal) : null;
+                              const displayedConsensus = roundDisplayValue(row?.value || 0);
+                              const variancePercent = displayedBudget !== null && displayedBudget !== 0
+                                ? ((displayedBudget - displayedConsensus) / displayedBudget) * 100
+                                : 0;
+                              return (
+                                <td key={`variance-pct-${year}-${month}`} className="variance-percent-cell">
+                                  {bVal !== null && bVal !== undefined ? <strong>{formatDisplayPercent(variancePercent)}</strong> : <span>—</span>}
+                                </td>
+                              );
+                            })}
+                            <td className="year-total variance-percent-total">
+                              <strong>{formatDisplayPercent(variancePercentTotal)}</strong>
+                              <span>Variance %</span>
                             </td>
                           </tr>
                         )}

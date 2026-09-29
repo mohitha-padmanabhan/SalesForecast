@@ -489,3 +489,58 @@ html,body,#root{min-height:100%;height:auto;overflow-y:auto!important;overflow-x
   padding-top: 16px;
   border-top: 1px solid #e2e8f0;
 }
+/* ===== Dashboard display refinements ===== */
+/* Planning-ID sidebar: show the ID alone without secondary metadata. */
+.plan-card .plan-id-tag {
+  margin-bottom: 0;
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* Matrix color mapping requested for the planning view. */
+.forecast-matrix td.actual-cell {
+  background: #ffffff !important;
+}
+
+.forecast-matrix td.forecast-cell {
+  background: #fff7d6 !important;
+}
+
+.prev-forecast-row td.prev-forecast-cell {
+  background: #f4f7fa !important;
+}
+
+.budget-row td.budget-cell,
+.budget-row .budget-total {
+  background: #e8f3fb !important;
+}
+
+.budget-row .year-cell {
+  background: #e8f3fb !important;
+  color: #082744 !important;
+}
+
+.cell-tag.budget {
+  background: #d5eaf8 !important;
+  color: #24506e !important;
+}
+
+/* Variance rows are intentionally neutral so Actual/Forecast/Budget colors stay distinct. */
+.variance-row td,
+.variance-percent-row td {
+  background: #ffffff;
+}
+
+.variance-row .year-cell,
+.variance-percent-row .year-cell {
+  background: #f7f9fb !important;
+  color: #082744 !important;
+}
+
+.variance-cell strong,
+.variance-percent-cell strong,
+.variance-total strong,
+.variance-percent-total strong {
+  color: #082744;
+  font-weight: 800;
+}

@@ -22,6 +22,12 @@ export const fetchFilterOptions = async (params = {}) => {
   if (params.premiseType && params.premiseType !== 'All') {
     queryParams.append('premise_type', params.premiseType);
   }
+  if (params.brandType && params.brandType !== 'All') {
+    queryParams.append('brand', params.brandType);
+  }
+  if (params.dateVersion) {
+    queryParams.append('date_version', params.dateVersion);
+  }
 
   // Use apiClient instead of naked fetch
   const response = await apiClient.get(`/filters/?${queryParams.toString()}`);
@@ -46,7 +52,7 @@ export const submitForecastAdjustments = async (submitPayload) => {
   return response.data;
 };
 
-// 4. Fetch Item Master Data 
+// 4. Fetch Item Master Data targeting localhost:8000
 export const fetchItemMasterData = async () => {
   const response = await apiClient.get('/forecast/items');
   return response.data;

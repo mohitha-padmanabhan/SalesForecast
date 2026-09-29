@@ -13,6 +13,7 @@ origins = [
     "http://localhost:8080",
 ]
 
+# Add deployed frontend URL from Render environment variable
 frontend_url = os.getenv("FRONTEND_URL")
 
 if frontend_url:

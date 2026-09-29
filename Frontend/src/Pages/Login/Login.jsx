@@ -52,7 +52,7 @@ function Login() {
   };
 
   const handleMicrosoftLogin = () => {
-    const backendBaseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+    const backendBaseUrl = 'http://localhost:8000';
     window.location.href = `${backendBaseUrl}/auth/microsoft/login`;
   };
 

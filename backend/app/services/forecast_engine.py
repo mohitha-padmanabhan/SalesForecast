@@ -347,7 +347,31 @@ def process_and_submit_adjustments(payload: SubmitPayload) -> Dict[str, int]:
         raise ValueError("No forecast data rows supplied for submission.")
 
     now = datetime.now()
-    current_date_version = now.replace(day=1).strftime("%Y-%m-%d")
+
+    # The DateVersion selected in the dashboard is the source of truth for
+    # both Plan by Month and Plan by Year submissions. Do not replace it
+    # with the first day of the server's current month.
+    selected_date_version_raw = getattr(payload.items_to_update[0], "date_version", None)
+    selected_date_version_text = str(selected_date_version_raw or "").strip()
+    if (not selected_date_version_text or
+            selected_date_version_text.lower() in {"all", "latest"}):
+        raise ValueError("A specific selected DateVersion is required for forecast submission.")
+
+    try:
+        current_date_version = pd.to_datetime(selected_date_version_text).strftime("%Y-%m-%d")
+    except Exception as exc:
+        raise ValueError(f"Invalid selected DateVersion: {selected_date_version_text}") from exc
+
+    # Prevent a mixed-version request from writing rows into the wrong version.
+    for submitted_item in payload.items_to_update:
+        item_version_raw = getattr(submitted_item, "date_version", None)
+        try:
+            item_version = pd.to_datetime(str(item_version_raw).strip()).strftime("%Y-%m-%d")
+        except Exception as exc:
+            raise ValueError(f"Invalid DateVersion in submitted forecast item: {item_version_raw}") from exc
+        if item_version != current_date_version:
+            raise ValueError("All submitted forecast rows must use the selected DateVersion.")
+
     current_load_timestamp = now.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
     detailed_fcst_updates = []
     unmodified_subdimension_updates = []
@@ -416,12 +440,9 @@ def process_and_submit_adjustments(payload: SubmitPayload) -> Dict[str, int]:
     logger.info(f"Top Chain Filter:    '{ui_top_chain_clean}'")
     logger.info("=========================================================")
 
-    first_item = payload.items_to_update[0]
-    source_date_version = clean_filter_value(getattr(first_item, 'date_version', None))
-    if source_date_version:
-        source_date_version_sql = f"'{source_date_version}'"
-    else:
-        source_date_version_sql = f"(SELECT MAX([DateVersion]) FROM [{settings.FABRIC_SCHEMA}].[{settings.TABLE_FCST_24MO_LOCKED}])"
+    # Read the baseline from the same DateVersion the user selected.
+    # current_date_version is normalized and validated above.
+    source_date_version_sql = f"'{current_date_version}'"
 
     # ------------------------------------------------------------------
     # FAST UPDATE FETCH

@@ -9,7 +9,9 @@ router = APIRouter(prefix="/filters", tags=["Filters"])
 def get_filter_options(
     state: Optional[str] = Query(None),
     chain_status: Optional[str] = Query(None),
-    premise_type: Optional[str] = Query(None)
+    premise_type: Optional[str] = Query(None),
+    brand: Optional[str] = Query(None),
+    date_version: Optional[str] = Query(None)
 ):
     # 1. Fetch DateVersion and Brand strictly from 24mo_locked table
     locked_query = f"""
@@ -66,11 +68,37 @@ def get_filter_options(
     # Hardcoded Chain Status options since it's not a column in DB
     chain_statuses = ["CHAIN", "INDEPENDENT"]
 
-    # 5. Handle Top Chain (Concept Owner Name) conditional rule
+    # 5. Top Chain must only contain values available for the currently selected filters.
+    #    Use the locked forecast table because it contains the same filter dimensions used by the dashboard.
     if chain_status and chain_status.upper() == "INDEPENDENT":
         top_chains = ["Other"]
     else:
-        top_chains = sorted(df_chain['Concept Owner Name'].dropna().unique().tolist()) if 'Concept Owner Name' in df_chain and not df_chain.empty else []
+        top_chain_clauses = ["[Top Chain] IS NOT NULL", "LTRIM(RTRIM([Top Chain])) <> ''"]
+        top_chain_params = []
+
+        if state and state.upper() != "ALL":
+            top_chain_clauses.append("[State] = ?")
+            top_chain_params.append(state)
+        if chain_status and chain_status.upper() != "ALL":
+            top_chain_clauses.append("[Chain Status] = ?")
+            top_chain_params.append(chain_status)
+        if premise_type and premise_type.upper() != "ALL":
+            top_chain_clauses.append("[Premise Type] = ?")
+            top_chain_params.append(premise_type)
+        if brand and brand.upper() != "ALL":
+            top_chain_clauses.append("[Brand] = ?")
+            top_chain_params.append(brand)
+        if date_version and date_version.upper() not in ("ALL", "LATEST"):
+            top_chain_clauses.append("CAST([DateVersion] AS DATE) = CAST(? AS DATE)")
+            top_chain_params.append(date_version)
+
+        top_chain_query = f"""
+            SELECT DISTINCT [Top Chain]
+            FROM [{settings.FABRIC_SCHEMA}].[{settings.TABLE_FCST_24MO_LOCKED}]
+            WHERE {" AND ".join(top_chain_clauses)}
+        """
+        df_top_chains = execute_query(top_chain_query, tuple(top_chain_params)) if top_chain_params else execute_query(top_chain_query)
+        top_chains = sorted(df_top_chains['Top Chain'].dropna().unique().tolist()) if 'Top Chain' in df_top_chains and not df_top_chains.empty else []
 
     return {
         "states": states,
