@@ -223,10 +223,10 @@ html,body,#root{min-height:100%;height:auto;overflow-y:auto!important;overflow-x
 
 /* Sidebar Planning ID Badge Style */
 .plan-id-tag {
-  font-size: 10px;
-  font-weight: 800;
-  color: var(--red);
-  background: #fce8eb;
+  font-size: 12px;
+  font-weight: 600;
+  color: black;
+  /* background: #fce8eb; */
   padding: 2px 6px;
   border-radius: 4px;
   display: inline-block;
@@ -512,7 +512,7 @@ html,body,#root{min-height:100%;height:auto;overflow-y:auto!important;overflow-x
 
 .budget-row td.budget-cell,
 .budget-row .budget-total {
-  background: #e8f3fb !important;
+  background: #c9e9ff !important;
 }
 
 .budget-row .year-cell {
@@ -544,3 +544,6 @@ html,body,#root{min-height:100%;height:auto;overflow-y:auto!important;overflow-x
   color: #082744;
   font-weight: 800;
 }
+
+/* YTD / YTG variance details shown below the Actuals and Forecast KPI tiles. */
+.metric-details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;margin-top:10px;padding-top:9px;border-top:1px solid #e1e8ef}.metric-detail{min-width:0;padding-right:8px}.metric-detail+.metric-detail{padding-left:10px;padding-right:0;border-left:1px solid #e1e8ef}.metric .metric-detail span{font-size:9px;line-height:1.2;margin:0 0 3px;color:var(--muted);white-space:nowrap}.metric-detail b{display:block;font-size:12px;line-height:1.2;color:var(--navy)}.metric.emphasize .metric-details{border-top-color:rgba(255,255,255,.2)}.metric.emphasize .metric-detail+.metric-detail{border-left-color:rgba(255,255,255,.2)}.metric.emphasize .metric-detail b{color:#fff}

@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  fetchFilterOptions, 
-  fetchGridData, 
-  submitForecastAdjustments, 
+import {
+  fetchFilterOptions,
+  fetchGridData,
+  submitForecastAdjustments,
   fetchItemMasterData,
   fetchExistingDemandPlanIds,
   createNewPlanningItem
@@ -32,7 +32,9 @@ const COMBINATION_OPTIONS = [
   { value: 'actual_only', label: 'Actuals Only' },
   { value: 'forecast_only', label: 'Forecasts Only' },
   { value: 'pre_forecast_only', label: 'Statistical Forecasts Only' },
-  { value: 'budget_only', label: 'Budget Only' }
+  { value: 'budget_only', label: 'Budget Only' },
+  { value: 'variance_budget', label: 'Variance to Budget (vBUD / vBUD %)' },
+  { value: 'variance_prior_year', label: 'Variance to Prior Year (vPY / vPY %)' }
 ];
 
 function makeDynamicRows(plan) {
@@ -47,7 +49,7 @@ function makeDynamicRows(plan) {
   });
 
   const currentYear = new Date().getFullYear();
-  const yearsList = extractedYears.size > 0 
+  const yearsList = extractedYears.size > 0
     ? Array.from(extractedYears).sort((a, b) => a - b)
     : [currentYear - 2, currentYear - 1, currentYear, currentYear + 1];
 
@@ -64,9 +66,9 @@ function makeDynamicRows(plan) {
       let kind = 'Actual';
       let value = 0;
       let budgetVal = budgetArr[idx] !== undefined && budgetArr[idx] !== null ? Number(budgetArr[idx]) : null;
-      
-      let previouslyForecasted = prevForecastsArr[idx] !== undefined && prevForecastsArr[idx] !== null 
-        ? Number(prevForecastsArr[idx]) 
+
+      let previouslyForecasted = prevForecastsArr[idx] !== undefined && prevForecastsArr[idx] !== null
+        ? Number(prevForecastsArr[idx])
         : null;
 
       if (year < currentYear) {
@@ -107,15 +109,15 @@ function makeDynamicRows(plan) {
 function Dashboard() {
   const navigate = useNavigate();
   const [tempTotalInputs, setTempTotalInputs] = useState({});
-  const [filters, setFilters] = useState({ 
-    state: 'All', 
-    chainStatus: 'All', 
-    premiseType: 'All', 
-    topChain: 'All', 
-    dateVersion: '', 
-    brandType: 'All' 
+  const [filters, setFilters] = useState({
+    state: 'All',
+    chainStatus: 'All',
+    premiseType: 'All',
+    topChain: 'All',
+    dateVersion: '',
+    brandType: 'All'
   });
-  
+
   const [filterOptions, setFilterOptions] = useState({
     states: [],
     chainStatuses: [],
@@ -133,13 +135,13 @@ function Dashboard() {
   const [rows, setRows] = useState([]);
   const [saved, setSaved] = useState(false);
   const [latestLoadTimestamp, setLatestLoadTimestamp] = useState('');
-  
+
   const [initialLoading, setInitialLoading] = useState(true);
   const [loading, setLoading] = useState(false);
-  
-  const [tableFilters, setTableFilters] = useState({ 
-    years: [], 
-    dataCombinations: COMBINATION_OPTIONS.map(c => c.value) 
+
+  const [tableFilters, setTableFilters] = useState({
+    years: [],
+    dataCombinations: COMBINATION_OPTIONS.map(c => c.value)
   });
 
   const [isYearDropdownOpen, setIsYearDropdownOpen] = useState(false);
@@ -189,7 +191,7 @@ function Dashboard() {
       setInitialLoading(true);
       try {
         const data = await fetchFilterOptions();
-        
+
         setFilterOptions({
           states: data.states || [],
           chainStatuses: data.chain_statuses || ["CHAIN", "INDEPENDENT"],
@@ -200,10 +202,10 @@ function Dashboard() {
         });
 
         const defaultVersion = data.default_date_version || (data.date_versions && data.date_versions[0]) || '';
-        
-        setFilters(prev => ({ 
-          ...prev, 
-          dateVersion: defaultVersion 
+
+        setFilters(prev => ({
+          ...prev,
+          dateVersion: defaultVersion
         }));
 
         const itemMasterRecords = await fetchItemMasterData();
@@ -357,7 +359,7 @@ function Dashboard() {
   const dynamicYears = useMemo(() => {
     const set = new Set(rows.map(r => r.year));
     return Array.from(set).sort((a, b) => a - b);
-  }, [rows]); 
+  }, [rows]);
 
   useEffect(() => {
     if (dynamicYears.length > 0 && tableFilters.years.length === 0) {
@@ -393,6 +395,27 @@ function Dashboard() {
 
   const yearTotal = actualCurrentYear + forecastCurrentYear;
 
+  // Tile variance metrics use the monthly Budget values that correspond to the
+  // same YTD (Actual) and YTG (Forecast) periods.
+  const currentYearTileVariances = useMemo(() => {
+    const currentYearRows = rows.filter(r => r.year === currentDynamicYear);
+    const actualRows = currentYearRows.filter(r => r.kind === 'Actual');
+    const forecastRows = currentYearRows.filter(r => r.kind === 'Forecast');
+
+    const ytdTarget = actualRows.reduce((sum, r) => sum + (Number(r.budgetVal) || 0), 0);
+    const ytgTarget = forecastRows.reduce((sum, r) => sum + (Number(r.budgetVal) || 0), 0);
+
+    const ytdVariance = actualCurrentYear - ytdTarget;
+    const ytgVariance = forecastCurrentYear - ytgTarget;
+
+    return {
+      ytdVariance,
+      ytdVariancePercent: ytdTarget !== 0 ? (ytdVariance / ytdTarget) * 100 : null,
+      ytgVariance,
+      ytgVariancePercent: ytgTarget !== 0 ? (ytgVariance / ytgTarget) * 100 : null
+    };
+  }, [rows, currentDynamicYear, actualCurrentYear, forecastCurrentYear]);
+
   const changeForecast = (key, value) => {
     if (!planType) return;
     setRows(prev => prev.map(r => r.key === key && r.kind === 'Forecast' ? { ...r, value: Math.max(0, Number(value) || 0) } : r));
@@ -417,13 +440,13 @@ function Dashboard() {
       if (r.year === year && r.kind === 'Forecast') {
         const baseCell = baselineForecastRows.find(b => b.key === r.key);
         const baseVal = baseCell ? baseCell.value : r.value;
-        const proportion = baselineTotal > 0 
-          ? baseVal / baselineTotal 
+        const proportion = baselineTotal > 0
+          ? baseVal / baselineTotal
           : 1 / baselineForecastRows.length;
 
-        return { 
-          ...r, 
-          value: Number((remainingForForecast * proportion).toFixed(2)) 
+        return {
+          ...r,
+          value: Number((remainingForForecast * proportion).toFixed(2))
         };
       }
       return r;
@@ -456,9 +479,9 @@ function Dashboard() {
   const submitPlan = async () => {
     if (!planType || !selectedPlan) return;
 
-    const userEmail = localStorage.getItem('user_email') || 
-                      localStorage.getItem('userEmail') || 
-                      localStorage.getItem('user') || 
+    const userEmail = localStorage.getItem('user_email') ||
+                      localStorage.getItem('userEmail') ||
+                      localStorage.getItem('user') ||
                       'user@company.com';
 
     const initialRows = makeDynamicRows(selectedPlan);
@@ -554,8 +577,8 @@ function Dashboard() {
         await loadForecastData(filters.dateVersion);
       }
     } catch (error) {
-      const detailMessage = error?.response?.data?.detail 
-        ? JSON.stringify(error.response.data.detail) 
+      const detailMessage = error?.response?.data?.detail
+        ? JSON.stringify(error.response.data.detail)
         : error.message;
       console.error("Submission failed:", detailMessage);
       alert(`Submission failed: ${detailMessage}`);
@@ -584,8 +607,8 @@ function Dashboard() {
       const exists = prev.dataCombinations.includes(val);
       return {
         ...prev,
-        dataCombinations: exists 
-          ? prev.dataCombinations.filter(c => c !== val) 
+        dataCombinations: exists
+          ? prev.dataCombinations.filter(c => c !== val)
           : [...prev.dataCombinations, val]
       };
     });
@@ -594,8 +617,8 @@ function Dashboard() {
   const toggleAllCombos = () => {
     setTableFilters(prev => ({
       ...prev,
-      dataCombinations: prev.dataCombinations.length === COMBINATION_OPTIONS.length 
-        ? [] 
+      dataCombinations: prev.dataCombinations.length === COMBINATION_OPTIONS.length
+        ? []
         : COMBINATION_OPTIONS.map(c => c.value)
     }));
   };
@@ -664,7 +687,7 @@ function Dashboard() {
 
   return (
     <main className="forecast-dashboard" style={{ position: 'relative' }}>
-      
+
       {initialLoading && (
         <div className="full-loader-overlay">
           <div className="spinner-lg"></div>
@@ -723,9 +746,9 @@ function Dashboard() {
           </div>
           <div className="planning-list">
             {gridData.map(plan => (
-              <button 
-                key={plan.planning_id} 
-                onClick={() => choosePlan(plan)} 
+              <button
+                key={plan.planning_id}
+                onClick={() => choosePlan(plan)}
                 className={`plan-card ${selectedId === plan.planning_id ? 'selected' : ''}`}
               >
                 <div className="plan-id-tag">{plan.planning_id}</div>
@@ -733,8 +756,8 @@ function Dashboard() {
             ))}
             {(!gridData.length || !isAnyFilterSelected) && !initialLoading && (
               <div className="empty-state">
-                {!isAnyFilterSelected 
-                  ? "Select top filter(s) to view planning IDs." 
+                {!isAnyFilterSelected
+                  ? "Select top filter(s) to view planning IDs."
                   : "No planning IDs match the selected filters."}
               </div>
             )}
@@ -757,8 +780,24 @@ function Dashboard() {
             </div>
 
             <div className="summary-strip">
-              <Metric label={`Actuals ${currentDynamicYear}`} value={formatDisplayNumber(actualCurrentYear)} suffix="9L" />
-              <Metric label={`Forecast ${currentDynamicYear}`} value={formatDisplayNumber(forecastCurrentYear)} suffix="9L" />
+              <Metric
+                label={`Actuals ${currentDynamicYear}`}
+                value={formatDisplayNumber(actualCurrentYear)}
+                suffix="9L"
+                details={[
+                  { label: 'YTD Variance', value: formatDisplayNumber(currentYearTileVariances.ytdVariance) },
+                  { label: 'YTD Variance %', value: currentYearTileVariances.ytdVariancePercent === null ? '—' : formatDisplayPercent(currentYearTileVariances.ytdVariancePercent) }
+                ]}
+              />
+              <Metric
+                label={`Forecast ${currentDynamicYear}`}
+                value={formatDisplayNumber(forecastCurrentYear)}
+                suffix="9L"
+                details={[
+                  { label: 'YTG Variance', value: formatDisplayNumber(currentYearTileVariances.ytgVariance) },
+                  { label: 'YTG Variance %', value: currentYearTileVariances.ytgVariancePercent === null ? '—' : formatDisplayPercent(currentYearTileVariances.ytgVariancePercent) }
+                ]}
+              />
               <Metric label={`${currentDynamicYear} Total`} value={formatDisplayNumber(yearTotal)} suffix="9L" emphasize />
               <Metric label="Annual Target" value={formatDisplayNumber(annualTarget)} suffix="9L" />
             </div>
@@ -769,21 +808,21 @@ function Dashboard() {
                 <strong>Filter Matrix by Year and Data Combinations</strong>
               </div>
               <div className="table-filter-group flex-row">
-                
+
                 <div className="custom-multiselect-container" ref={yearDropdownRef}>
                   <span className="filter-label-title">Year Filter</span>
-                  <div 
-                    className="multiselect-trigger" 
+                  <div
+                    className="multiselect-trigger"
                     onClick={() => {
                       setIsYearDropdownOpen(!isYearDropdownOpen);
                       setIsComboDropdownOpen(false);
                     }}
                   >
                     <span>
-                      {tableFilters.years.length === 0 
-                        ? 'Select Years' 
-                        : tableFilters.years.length === dynamicYears.length 
-                          ? 'All Years' 
+                      {tableFilters.years.length === 0
+                        ? 'Select Years'
+                        : tableFilters.years.length === dynamicYears.length
+                          ? 'All Years'
                           : `${tableFilters.years.length} Selected`}
                     </span>
                     <span className="arrow">{isYearDropdownOpen ? '▲' : '▼'}</span>
@@ -792,20 +831,20 @@ function Dashboard() {
                   {isYearDropdownOpen && (
                     <div className="multiselect-dropdown">
                       <label className="multiselect-option header-option">
-                        <input 
-                          type="checkbox" 
-                          checked={tableFilters.years.length === dynamicYears.length && dynamicYears.length > 0} 
-                          onChange={toggleAllYears} 
+                        <input
+                          type="checkbox"
+                          checked={tableFilters.years.length === dynamicYears.length && dynamicYears.length > 0}
+                          onChange={toggleAllYears}
                         />
                         <span><strong>(Select All)</strong></span>
                       </label>
                       <hr style={{ margin: '4px 0', border: 'none', borderTop: '1px solid #e2e8f0' }} />
                       {dynamicYears.map(year => (
                         <label key={year} className="multiselect-option">
-                          <input 
-                            type="checkbox" 
-                            checked={tableFilters.years.includes(year)} 
-                            onChange={() => toggleYearSelection(year)} 
+                          <input
+                            type="checkbox"
+                            checked={tableFilters.years.includes(year)}
+                            onChange={() => toggleYearSelection(year)}
                           />
                           <span>{year}</span>
                         </label>
@@ -816,18 +855,18 @@ function Dashboard() {
 
                 <div className="custom-multiselect-container" ref={comboDropdownRef}>
                   <span className="filter-label-title">View Combination Filter</span>
-                  <div 
-                    className="multiselect-trigger" 
+                  <div
+                    className="multiselect-trigger"
                     onClick={() => {
                       setIsComboDropdownOpen(!isComboDropdownOpen);
                       setIsYearDropdownOpen(false);
                     }}
                   >
                     <span>
-                      {tableFilters.dataCombinations.length === 0 
-                        ? 'Select Combinations' 
-                        : tableFilters.dataCombinations.length === COMBINATION_OPTIONS.length 
-                          ? 'All Combinations' 
+                      {tableFilters.dataCombinations.length === 0
+                        ? 'Select Combinations'
+                        : tableFilters.dataCombinations.length === COMBINATION_OPTIONS.length
+                          ? 'All Combinations'
                           : `${tableFilters.dataCombinations.length} Selected`}
                     </span>
                     <span className="arrow">{isComboDropdownOpen ? '▲' : '▼'}</span>
@@ -836,20 +875,20 @@ function Dashboard() {
                   {isComboDropdownOpen && (
                     <div className="multiselect-dropdown">
                       <label className="multiselect-option header-option">
-                        <input 
-                          type="checkbox" 
-                          checked={tableFilters.dataCombinations.length === COMBINATION_OPTIONS.length} 
-                          onChange={toggleAllCombos} 
+                        <input
+                          type="checkbox"
+                          checked={tableFilters.dataCombinations.length === COMBINATION_OPTIONS.length}
+                          onChange={toggleAllCombos}
                         />
                         <span><strong>(Select All)</strong></span>
                       </label>
                       <hr style={{ margin: '4px 0', border: 'none', borderTop: '1px solid #e2e8f0' }} />
                       {COMBINATION_OPTIONS.map(opt => (
                         <label key={opt.value} className="multiselect-option">
-                          <input 
-                            type="checkbox" 
-                            checked={tableFilters.dataCombinations.includes(opt.value)} 
-                            onChange={() => toggleComboSelection(opt.value)} 
+                          <input
+                            type="checkbox"
+                            checked={tableFilters.dataCombinations.includes(opt.value)}
+                            onChange={() => toggleComboSelection(opt.value)}
                           />
                           <span>{opt.label}</span>
                         </label>
@@ -866,7 +905,7 @@ function Dashboard() {
               <div className="legend">
                 <span><i className="dot actual"></i>Actuals</span>
                 <span><i className="dot forecast"></i>Forecast</span>
-                <span><i className="dot previous"></i>Statistical Forecast</span> 
+                <span><i className="dot previous"></i>Statistical Forecast</span>
                 <span><i className="dot budget"></i>Budget</span>
               </div>
             </div>
@@ -883,7 +922,7 @@ function Dashboard() {
                 <tbody>
                   {visibleYears.map(year => {
                     const yearRows = rows.filter(r => r.year === year);
-                    
+
                     const isEditableYear = planType === 'year' && year >= currentDynamicYear;
                     const prevForecastRows = yearRows.filter(r => r.previouslyForecasted !== null);
                     const prevTotal = prevForecastRows.reduce((s, r) => s + (r.previouslyForecasted || 0), 0);
@@ -905,14 +944,26 @@ function Dashboard() {
                       })
                       .reduce((s, r) => s + r.value, 0);
 
-                    // Variance is intentionally based on the same rounded values shown in the UI.
-                    // This keeps displayed equations consistent, e.g. 138 - 130 = 8.
+                    // Variances intentionally use the same rounded values shown in the UI.
+                    // vBUD = Consensus - Budget; vPY = Consensus - Prior Year.
+                    const consensusTotal = yearRows.reduce((s, r) => s + r.value, 0);
                     const displayedBudgetTotal = roundDisplayValue(budgetTotal);
-                    const displayedConsensusTotal = roundDisplayValue(mainTotal);
-                    const varianceTotal = displayedBudgetTotal - displayedConsensusTotal;
-                    const variancePercentTotal = displayedBudgetTotal !== 0
-                      ? (varianceTotal / displayedBudgetTotal) * 100
-                      : 0;
+                    const displayedConsensusTotal = roundDisplayValue(consensusTotal);
+                    const vBudTotal = displayedConsensusTotal - displayedBudgetTotal;
+                    const vBudPercentTotal = displayedBudgetTotal !== 0
+                      ? (vBudTotal / displayedBudgetTotal) * 100
+                      : null;
+
+                    const priorYearRows = rows.filter(r => r.year === year - 1);
+                    const priorYearTotal = priorYearRows.reduce((s, r) => s + r.value, 0);
+                    const displayedPriorYearTotal = roundDisplayValue(priorYearTotal);
+                    const vPyTotal = displayedConsensusTotal - displayedPriorYearTotal;
+                    const vPyPercentTotal = displayedPriorYearTotal !== 0
+                      ? (vPyTotal / displayedPriorYearTotal) * 100
+                      : null;
+
+                    const showVBud = isCurrentYear && budgetRows.length > 0 && tableFilters.dataCombinations.includes('variance_budget');
+                    const showVPy = isCurrentYear && priorYearRows.length > 0 && tableFilters.dataCombinations.includes('variance_prior_year');
 
                     return (
                       <React.Fragment key={year}>
@@ -1009,48 +1060,94 @@ function Dashboard() {
                           </tr>
                         )}
 
-                        {isCurrentYear && budgetRows.length > 0 && (
+                        {showVBud && (
                           <tr className="variance-row">
-                            <th className="year-cell variance-label">Variance ({year})</th>
+                            <th className="year-cell variance-label">vBUD ({year})</th>
                             {MONTHS.map((month, idx) => {
                               const row = yearRows.find(r => r.monthIndex === idx);
                               const bVal = row?.budgetVal;
                               const displayedBudget = bVal !== null && bVal !== undefined ? roundDisplayValue(bVal) : null;
                               const displayedConsensus = roundDisplayValue(row?.value || 0);
-                              const variance = displayedBudget !== null ? displayedBudget - displayedConsensus : null;
+                              const variance = displayedBudget !== null ? displayedConsensus - displayedBudget : null;
                               return (
-                                <td key={`variance-${year}-${month}`} className="variance-cell">
+                                <td key={`vbud-${year}-${month}`} className="variance-cell">
                                   {variance !== null ? <strong>{formatDisplayNumber(variance)}</strong> : <span>—</span>}
                                 </td>
                               );
                             })}
                             <td className="year-total variance-total">
-                              <strong>{formatDisplayNumber(varianceTotal)}</strong>
-                              <span>Budget - Consensus</span>
+                              <strong>{formatDisplayNumber(vBudTotal)}</strong>
+                              <span>Consensus - Budget</span>
                             </td>
                           </tr>
                         )}
 
-                        {isCurrentYear && budgetRows.length > 0 && (
+                        {showVBud && (
                           <tr className="variance-percent-row">
-                            <th className="year-cell variance-percent-label">Variance % ({year})</th>
+                            <th className="year-cell variance-percent-label">vBUD % ({year})</th>
                             {MONTHS.map((month, idx) => {
                               const row = yearRows.find(r => r.monthIndex === idx);
                               const bVal = row?.budgetVal;
                               const displayedBudget = bVal !== null && bVal !== undefined ? roundDisplayValue(bVal) : null;
                               const displayedConsensus = roundDisplayValue(row?.value || 0);
                               const variancePercent = displayedBudget !== null && displayedBudget !== 0
-                                ? ((displayedBudget - displayedConsensus) / displayedBudget) * 100
-                                : 0;
+                                ? ((displayedConsensus - displayedBudget) / displayedBudget) * 100
+                                : null;
                               return (
-                                <td key={`variance-pct-${year}-${month}`} className="variance-percent-cell">
-                                  {bVal !== null && bVal !== undefined ? <strong>{formatDisplayPercent(variancePercent)}</strong> : <span>—</span>}
+                                <td key={`vbud-pct-${year}-${month}`} className="variance-percent-cell">
+                                  {variancePercent !== null ? <strong>{formatDisplayPercent(variancePercent)}</strong> : <span>—</span>}
                                 </td>
                               );
                             })}
                             <td className="year-total variance-percent-total">
-                              <strong>{formatDisplayPercent(variancePercentTotal)}</strong>
-                              <span>Variance %</span>
+                              <strong>{vBudPercentTotal !== null ? formatDisplayPercent(vBudPercentTotal) : '—'}</strong>
+                              <span>vBUD %</span>
+                            </td>
+                          </tr>
+                        )}
+
+                        {showVPy && (
+                          <tr className="variance-row">
+                            <th className="year-cell variance-label">vPY</th>
+                            {MONTHS.map((month, idx) => {
+                              const row = yearRows.find(r => r.monthIndex === idx);
+                              const priorRow = priorYearRows.find(r => r.monthIndex === idx);
+                              const displayedConsensus = roundDisplayValue(row?.value || 0);
+                              const displayedPriorYear = priorRow ? roundDisplayValue(priorRow.value) : null;
+                              const variance = displayedPriorYear !== null ? displayedConsensus - displayedPriorYear : null;
+                              return (
+                                <td key={`vpy-${year}-${month}`} className="variance-cell">
+                                  {variance !== null ? <strong>{formatDisplayNumber(variance)}</strong> : <span>—</span>}
+                                </td>
+                              );
+                            })}
+                            <td className="year-total variance-total">
+                              <strong>{formatDisplayNumber(vPyTotal)}</strong>
+                              <span>Consensus - Prior Year</span>
+                            </td>
+                          </tr>
+                        )}
+
+                        {showVPy && (
+                          <tr className="variance-percent-row">
+                            <th className="year-cell variance-percent-label">vPY %</th>
+                            {MONTHS.map((month, idx) => {
+                              const row = yearRows.find(r => r.monthIndex === idx);
+                              const priorRow = priorYearRows.find(r => r.monthIndex === idx);
+                              const displayedConsensus = roundDisplayValue(row?.value || 0);
+                              const displayedPriorYear = priorRow ? roundDisplayValue(priorRow.value) : null;
+                              const variancePercent = displayedPriorYear !== null && displayedPriorYear !== 0
+                                ? ((displayedConsensus - displayedPriorYear) / displayedPriorYear) * 100
+                                : null;
+                              return (
+                                <td key={`vpy-pct-${year}-${month}`} className="variance-percent-cell">
+                                  {variancePercent !== null ? <strong>{formatDisplayPercent(variancePercent)}</strong> : <span>—</span>}
+                                </td>
+                              );
+                            })}
+                            <td className="year-total variance-percent-total">
+                              <strong>{vPyPercentTotal !== null ? formatDisplayPercent(vPyPercentTotal) : '—'}</strong>
+                              <span>vPY %</span>
                             </td>
                           </tr>
                         )}
@@ -1087,11 +1184,11 @@ function Dashboard() {
               <h3>Add New Planning Item</h3>
               <button className="close-btn" onClick={handleCloseModal}>&times;</button>
             </div>
-            
+
             <form onSubmit={handleCreateNewItem} className="modal-body">
               <div className="form-group">
                 <label>Item Master Demand Plan ID</label>
-                <select 
+                <select
                   value={newItemForm.demandPlanId}
                   onChange={e => setNewItemForm({ ...newItemForm, demandPlanId: e.target.value })}
                   required
@@ -1110,7 +1207,7 @@ function Dashboard() {
 
               <div className="form-group">
                 <label>Brand</label>
-                <select 
+                <select
                   value={newItemForm.brand}
                   onChange={e => setNewItemForm({ ...newItemForm, brand: e.target.value })}
                   required
@@ -1124,7 +1221,7 @@ function Dashboard() {
 
               <div className="form-group">
                 <label>State</label>
-                <select 
+                <select
                   value={newItemForm.state}
                   onChange={e => setNewItemForm({ ...newItemForm, state: e.target.value })}
                   required
@@ -1140,21 +1237,21 @@ function Dashboard() {
                 <label>Template Choice</label>
                 <div className="radio-group">
                   <label className="radio-label">
-                    <input 
-                      type="radio" 
-                      name="templateChoice" 
-                      value="new" 
+                    <input
+                      type="radio"
+                      name="templateChoice"
+                      value="new"
                       checked={newItemForm.templateChoice === 'new'}
                       onChange={e => setNewItemForm({ ...newItemForm, templateChoice: e.target.value })}
                     />
                     <span>New Template Choice</span>
                   </label>
-                  
+
                   <label className="radio-label">
-                    <input 
-                      type="radio" 
-                      name="templateChoice" 
-                      value="existing" 
+                    <input
+                      type="radio"
+                      name="templateChoice"
+                      value="existing"
                       checked={newItemForm.templateChoice === 'existing'}
                       onChange={e => setNewItemForm({ ...newItemForm, templateChoice: e.target.value })}
                     />
@@ -1166,7 +1263,7 @@ function Dashboard() {
               {newItemForm.templateChoice === 'existing' && (
                 <div className="form-group conditional-group">
                   <label>Existing Demand Plan ID (from 24monforecast)</label>
-                  <select 
+                  <select
                     value={newItemForm.existingDemandPlanId}
                     onChange={e => setNewItemForm({ ...newItemForm, existingDemandPlanId: e.target.value })}
                     required
@@ -1211,14 +1308,24 @@ function Filter({ label, value, options, onChange, required, disabled }) {
   );
 }
 
-function Metric({ label, value, suffix, emphasize }) { 
+function Metric({ label, value, suffix, emphasize, details = [] }) {
   return (
     <div className={`metric ${emphasize ? 'emphasize' : ''}`}>
       <span>{label}</span>
       <strong>{value}</strong>
       <small>{suffix}</small>
+      {details.length > 0 && (
+        <div className="metric-details">
+          {details.map(detail => (
+            <div className="metric-detail" key={detail.label}>
+              <span>{detail.label}</span>
+              <b>{detail.value}</b>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
-  ); 
+  );
 }
 
 export default Dashboard;
