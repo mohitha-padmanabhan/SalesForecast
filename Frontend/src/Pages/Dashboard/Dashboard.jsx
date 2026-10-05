@@ -135,6 +135,7 @@ function Dashboard() {
   const [rows, setRows] = useState([]);
   const [saved, setSaved] = useState(false);
   const [latestLoadTimestamp, setLatestLoadTimestamp] = useState('');
+  const [latestDateVersion, setLatestDateVersion] = useState('');
 
   const [initialLoading, setInitialLoading] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -198,25 +199,17 @@ function Dashboard() {
           premiseTypes: data.premise_types || [],
           topChains: data.top_chains || [],
           brands: data.brands || [],
-          versions: data.date_versions || []
+          versions: (data.date_versions || []).slice(0, 3)
         });
 
         const defaultVersion = data.default_date_version || (data.date_versions && data.date_versions[0]) || '';
+        setLatestDateVersion(defaultVersion);
 
         setFilters(prev => ({
           ...prev,
           dateVersion: defaultVersion
         }));
 
-        const itemMasterRecords = await fetchItemMasterData();
-        const uniqueDemandPlanIds = Array.from(
-          new Set(
-            (Array.isArray(itemMasterRecords) ? itemMasterRecords : [])
-              .map(item => typeof item === 'string' ? item : item?.demand_plan_id)
-              .filter(Boolean)
-          )
-        ).sort();
-        setDemandPlanOptions(uniqueDemandPlanIds);
 
       } catch (err) {
         console.error('Failed to load initial dataset:', err);
@@ -269,6 +262,36 @@ function Dashboard() {
 
     updateCascadingFilters();
   }, [filters.state, filters.chainStatus, filters.premiseType, filters.brandType, filters.dateVersion, filters.topChain, initialLoading]);
+
+  // Item Master IDs follow the Brand filter selected on the dashboard.
+  // With All Brands selected, the complete item-master list is shown.
+  useEffect(() => {
+    if (initialLoading) return;
+
+    const loadItemMasterIds = async () => {
+      try {
+        const itemMasterRecords = await fetchItemMasterData(filters.brandType || 'All');
+        const uniqueDemandPlanIds = Array.from(
+          new Set(
+            (Array.isArray(itemMasterRecords) ? itemMasterRecords : [])
+              .map(item => typeof item === 'string' ? item : item?.demand_plan_id)
+              .filter(Boolean)
+          )
+        ).sort((a, b) => String(a).localeCompare(String(b)));
+        setDemandPlanOptions(uniqueDemandPlanIds);
+        setNewItemForm(prev =>
+          prev.demandPlanId && !uniqueDemandPlanIds.includes(prev.demandPlanId)
+            ? { ...prev, demandPlanId: '' }
+            : prev
+        );
+      } catch (err) {
+        console.error('Failed to load item master demand plan IDs:', err);
+        setDemandPlanOptions([]);
+      }
+    };
+
+    loadItemMasterIds();
+  }, [filters.brandType, initialLoading]);
 
   // Dynamic Fetching of Existing Plan IDs for Modal
   useEffect(() => {
@@ -327,7 +350,9 @@ function Dashboard() {
       };
 
       const resData = await fetchGridData(payload);
-      const items = resData.grid_data || [];
+      const items = [...(resData.grid_data || [])].sort((a, b) =>
+        String(a?.planning_id || '').localeCompare(String(b?.planning_id || ''), undefined, { sensitivity: 'base', numeric: true })
+      );
       setGridData(items);
       setLatestLoadTimestamp(resData?.statistics?.latest_load_timestamp || '');
 
@@ -455,6 +480,34 @@ function Dashboard() {
     if (year === currentDynamicYear) {
       setAnnualTarget(newTotal);
     }
+    setSaved(false);
+  };
+
+  const isLatestDateVersion = Boolean(latestDateVersion) && filters.dateVersion === latestDateVersion;
+
+  useEffect(() => {
+    if (!isLatestDateVersion && planType) {
+      setPlanType(null);
+      setSaved(false);
+    }
+  }, [isLatestDateVersion, planType]);
+
+  const clearAllFilters = () => {
+    setFilters({
+      state: 'All',
+      chainStatus: 'All',
+      premiseType: 'All',
+      topChain: 'All',
+      dateVersion: latestDateVersion,
+      brandType: 'All'
+    });
+    setTableFilters({
+      years: [],
+      dataCombinations: COMBINATION_OPTIONS.map(c => c.value)
+    });
+    setIsYearDropdownOpen(false);
+    setIsComboDropdownOpen(false);
+    setPlanType(null);
     setSaved(false);
   };
 
@@ -624,6 +677,10 @@ function Dashboard() {
   };
 
   const handleOpenModal = () => {
+    setNewItemForm(prev => ({
+      ...prev,
+      brand: filters.brandType !== 'All' ? filters.brandType : prev.brand
+    }));
     setIsModalOpen(true);
   };
 
@@ -653,7 +710,10 @@ function Dashboard() {
 
     setSubmittingModal(true);
     try {
-      await createNewPlanningItem(newItemForm);
+      await createNewPlanningItem({
+        ...newItemForm,
+        dateVersion: filters.dateVersion || latestDateVersion
+      });
       alert(`Successfully created demand plan ID: ${newItemForm.demandPlanId}`);
       handleCloseModal();
 
@@ -711,17 +771,22 @@ function Dashboard() {
         </div>
         <div className="mode-area">
           <span className={`view-badge ${!planType ? 'active' : ''}`}>{!planType ? 'View Mode' : 'Edit Mode'}</span>
-          <div className="mode-switch" aria-label="Planning mode">
-            <button className={planType === 'month' ? 'active' : ''} onClick={() => switchPlanType('month')}>Plan by Month</button>
-            <button className={planType === 'year' ? 'active' : ''} onClick={() => switchPlanType('year')}>Plan by Year</button>
-          </div>
+          {isLatestDateVersion && (
+            <div className="mode-switch" aria-label="Planning mode">
+              <button className={planType === 'month' ? 'active' : ''} onClick={() => switchPlanType('month')}>Plan by Month</button>
+              <button className={planType === 'year' ? 'active' : ''} onClick={() => switchPlanType('year')}>Plan by Year</button>
+            </div>
+          )}
         </div>
       </header>
 
       <section className="filter-card">
         <div className="filter-title">
           <span>Filters</span>
-          <small>{loading || initialLoading ? 'Connecting...' : 'Synced to Database'}</small>
+          <div className="filter-title-actions">
+            <small>{loading || initialLoading ? 'Connecting...' : 'Synced to Database'}</small>
+            <button type="button" className="clear-filters-btn" onClick={clearAllFilters} disabled={loading || initialLoading}>Clear Filters</button>
+          </div>
         </div>
         <div className="filter-grid">
           <Filter label="State" value={filters.state} options={filterOptions.states} onChange={v => setFilters(prev => ({ ...prev, state: v }))} disabled={loading || initialLoading} />

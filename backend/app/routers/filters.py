@@ -22,7 +22,7 @@ def get_filter_options(
     
     date_versions = []
     if 'DateVersion' in df_locked and not df_locked.empty:
-        date_versions = sorted({str(v)[:10] for v in df_locked['DateVersion'].dropna().tolist()}, reverse=True)
+        date_versions = sorted({str(v)[:10] for v in df_locked['DateVersion'].dropna().tolist()}, reverse=True)[:3]
     latest_date_version = date_versions[0] if date_versions else None
     brands = sorted(df_locked['Brand'].dropna().unique().tolist()) if 'Brand' in df_locked and not df_locked.empty else []
 

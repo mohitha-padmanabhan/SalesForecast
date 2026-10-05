@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Query
 from fastapi.encoders import jsonable_encoder
 from typing import List
 from app.schemas import ItemMasterSchema,AddNewItemPayload
@@ -61,10 +61,10 @@ def submit_forecast_changes(payload: SubmitPayload):
         )
 
 @router.get("/items")
-def get_item_master_data():
-    """Fetches all items from the item_master table."""
+def get_item_master_data(brand: str = Query("All")):
+    """Fetch item-master Demand Plan IDs, optionally filtered by bc_brandGroup."""
     try:
-        return fetch_item_master_data()
+        return fetch_item_master_data(brand)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

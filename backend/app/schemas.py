@@ -121,5 +121,6 @@ class AddNewItemPayload(BaseModel):
     brand: str
     template_choice: str  # 'new' or 'existing'
     existing_demand_plan_id: Optional[str] = None
+    date_version: str
     class Config:
         populate_by_name = True

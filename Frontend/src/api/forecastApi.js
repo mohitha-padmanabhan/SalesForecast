@@ -53,8 +53,8 @@ export const submitForecastAdjustments = async (submitPayload) => {
 };
 
 // 4. Fetch Item Master Data targeting localhost:8000
-export const fetchItemMasterData = async () => {
-  const response = await apiClient.get('/forecast/items');
+export const fetchItemMasterData = async (brand = 'All') => {
+  const response = await apiClient.get('/forecast/items', { params: { brand } });
   return response.data;
 };
 
@@ -85,6 +85,7 @@ export async function createNewPlanningItem(payload) {
       brand: payload.brand,
       template_choice: payload.templateChoice,
       existing_demand_plan_id: payload.existingDemandPlanId || null,
+      date_version: payload.dateVersion,
     }),
   });
 

@@ -13,7 +13,6 @@ origins = [
     "http://localhost:8080",
 ]
 
-# Add deployed frontend URL from Render environment variable
 frontend_url = os.getenv("FRONTEND_URL")
 
 if frontend_url:
@@ -27,9 +26,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register API endpoints
+# Register endpoints
 app.include_router(filters.router, prefix="/api/v1")
 app.include_router(forecast.router, prefix="/api/v1")
-
-# Authentication endpoints
 app.include_router(auth.router)

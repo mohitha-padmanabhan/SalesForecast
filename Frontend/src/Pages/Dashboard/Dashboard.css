@@ -547,3 +547,7 @@ html,body,#root{min-height:100%;height:auto;overflow-y:auto!important;overflow-x
 
 /* YTD / YTG variance details shown below the Actuals and Forecast KPI tiles. */
 .metric-details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;margin-top:10px;padding-top:9px;border-top:1px solid #e1e8ef}.metric-detail{min-width:0;padding-right:8px}.metric-detail+.metric-detail{padding-left:10px;padding-right:0;border-left:1px solid #e1e8ef}.metric .metric-detail span{font-size:9px;line-height:1.2;margin:0 0 3px;color:var(--muted);white-space:nowrap}.metric-detail b{display:block;font-size:12px;line-height:1.2;color:var(--navy)}.metric.emphasize .metric-details{border-top-color:rgba(255,255,255,.2)}.metric.emphasize .metric-detail+.metric-detail{border-left-color:rgba(255,255,255,.2)}.metric.emphasize .metric-detail b{color:#fff}
+
+
+/* Filter reset controls */
+.filter-title-actions{display:flex;align-items:center;gap:12px}.clear-filters-btn{height:34px;padding:0 14px;border:1px solid #ced9e3;border-radius:8px;background:#fff;color:#082744;font-weight:800;cursor:pointer}.clear-filters-btn:hover:not(:disabled){background:#f3f6f8;border-color:#082744}.clear-filters-btn:disabled{opacity:.55;cursor:not-allowed}@media(max-width:520px){.filter-title-actions small{display:none}.clear-filters-btn{height:32px;padding:0 10px}}

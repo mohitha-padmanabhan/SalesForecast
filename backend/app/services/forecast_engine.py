@@ -40,11 +40,18 @@ class SubmitPayload(BaseModel):
     class Config:
         populate_by_name = True
 
-def fetch_item_master_data():
+def fetch_item_master_data(brand: Optional[str] = None):
+    brand_filter = ""
+    if brand and str(brand).strip() and str(brand).strip().lower() != "all":
+        escaped_brand = str(brand).strip().replace("'", "''")
+        brand_filter = f"WHERE RTRIM(LTRIM([bc_brandGroup])) = '{escaped_brand}'"
+
     query = f"""
-        SELECT 
+        SELECT DISTINCT
             [demand_plan_id]
         FROM [{settings.FABRIC_SCHEMA}].[{settings.TABLE_ITEM_MASTER}]
+        {brand_filter}
+        ORDER BY [demand_plan_id]
     """
     df = execute_query(query)
     df = df.fillna("")  # Ensures safe JSON serialization
@@ -727,7 +734,14 @@ def create_new_planning_item(payload: AddNewItemPayload) -> Dict[str, Any]:
     st = payload.state.replace("'", "''").strip()
     br = payload.brand.replace("'", "''").strip()
     now = datetime.now()
-    today_version = now.replace(day=1).strftime("%Y-%m-%d")
+    selected_version_text = str(payload.date_version or "").strip()
+    if not selected_version_text or selected_version_text.lower() in {"all", "latest"}:
+        raise ValueError("A concrete selected DateVersion is required when creating a planning item.")
+    try:
+        selected_date_version = pd.to_datetime(selected_version_text).strftime("%Y-%m-%d")
+    except Exception as exc:
+        raise ValueError(f"Invalid selected DateVersion: {selected_version_text}") from exc
+    selected_version_sql = selected_date_version.replace("'", "''")
     load_timestamp = now.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
     if payload.template_choice == "new":
@@ -742,7 +756,7 @@ def create_new_planning_item(payload: AddNewItemPayload) -> Dict[str, Any]:
                     ORDER BY [LoadTimestamp] DESC
                 ) AS rn
                 FROM [{settings.FABRIC_SCHEMA}].[{settings.TABLE_FCST_24MO_LOCKED}]
-                WHERE [DateVersion] = (SELECT MAX([DateVersion]) FROM [{settings.FABRIC_SCHEMA}].[{settings.TABLE_FCST_24MO_LOCKED}])
+                WHERE CAST([DateVersion] AS DATE) = CAST('{selected_version_sql}' AS DATE)
             )
             SELECT DISTINCT
                 [State], [Brand], [Chain Status], [Premise Type], [Top Chain],
@@ -766,7 +780,7 @@ def create_new_planning_item(payload: AddNewItemPayload) -> Dict[str, Any]:
                 "TopChain": str(r["Top Chain"] or ""),
                 "Date": str(r["Date"]),
                 "ForecastQty_9L": 0.0,
-                "DateVersion": today_version,
+                "DateVersion": selected_date_version,
                 "LoadTimestamp": load_timestamp
             })
 
@@ -787,7 +801,7 @@ def create_new_planning_item(payload: AddNewItemPayload) -> Dict[str, Any]:
                     ORDER BY [LoadTimestamp] DESC
                 ) AS rn
                 FROM [{settings.FABRIC_SCHEMA}].[{settings.TABLE_FCST_24MO_LOCKED}]
-                WHERE [DateVersion] = (SELECT MAX([DateVersion]) FROM [{settings.FABRIC_SCHEMA}].[{settings.TABLE_FCST_24MO_LOCKED}])
+                WHERE CAST([DateVersion] AS DATE) = CAST('{selected_version_sql}' AS DATE)
             )
             SELECT DISTINCT
                 [State], [Brand], [Chain Status], [Premise Type], [Top Chain],
@@ -814,7 +828,7 @@ def create_new_planning_item(payload: AddNewItemPayload) -> Dict[str, Any]:
                 "TopChain": str(r["Top Chain"] or ""),
                 "Date": str(r["Date"]),
                 "ForecastQty_9L": sanitize_float(r["ForecastQty_9L"]),
-                "DateVersion": today_version,
+                "DateVersion": selected_date_version,
                 "LoadTimestamp": load_timestamp
             })
 
@@ -850,6 +864,6 @@ def create_new_planning_item(payload: AddNewItemPayload) -> Dict[str, Any]:
     return {
         "inserted_rows": len(insert_payload),
         "planning_id": payload.demand_plan_id,
-        "date_version": today_version,
+        "date_version": selected_date_version,
         "load_timestamp": load_timestamp
     }
