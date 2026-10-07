@@ -420,6 +420,12 @@ function Dashboard() {
 
   const yearTotal = actualCurrentYear + forecastCurrentYear;
 
+  const annualTargetBudget = useMemo(() => {
+    return rows
+      .filter(r => r.year === currentDynamicYear)
+      .reduce((sum, r) => sum + (Number(r.budgetVal) || 0), 0);
+  }, [rows, currentDynamicYear]);
+
   // Tile variance metrics use the monthly Budget values that correspond to the
   // same YTD (Actual) and YTG (Forecast) periods.
   const currentYearTileVariances = useMemo(() => {
@@ -864,7 +870,7 @@ function Dashboard() {
                 ]}
               />
               <Metric label={`${currentDynamicYear} Total`} value={formatDisplayNumber(yearTotal)} suffix="9L" emphasize />
-              <Metric label="Annual Target" value={formatDisplayNumber(annualTarget)} suffix="9L" />
+              <Metric label="Annual Target" value={formatDisplayNumber(annualTargetBudget)} suffix="9L" />
             </div>
 
             <div className="forecast-view-controls">
