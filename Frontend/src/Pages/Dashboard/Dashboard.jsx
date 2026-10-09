@@ -151,6 +151,8 @@ function Dashboard() {
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submittingModal, setSubmittingModal] = useState(false);
+  const [forecastSubmitting, setForecastSubmitting] = useState(false);
+  const [varianceMode, setVarianceMode] = useState("budget");
   const [newItemForm, setNewItemForm] = useState({
     demandPlanId: '',
     brand: '',
@@ -447,6 +449,26 @@ function Dashboard() {
     };
   }, [rows, currentDynamicYear, actualCurrentYear, forecastCurrentYear]);
 
+  const displayedTileVariances = useMemo(() => {
+    if (varianceMode === 'budget') return currentYearTileVariances;
+    const prior = rows.filter(r => r.year === currentDynamicYear - 1);
+    const current = rows.filter(r => r.year === currentDynamicYear);
+    const compare = (period) => {
+      const currentPeriod = current.filter(r => r.kind === period);
+      const priorTotal = currentPeriod.reduce((total, r) => {
+        const match = prior.find(p => p.monthIndex === r.monthIndex);
+        return total + (match ? Number(match.value) || 0 : 0);
+      }, 0);
+      const currentTotal = currentPeriod.reduce((total, r) => total + (Number(r.value) || 0), 0);
+      const variance = currentTotal - priorTotal;
+      return { variance, percent: priorTotal !== 0 ? variance / priorTotal * 100 : null };
+    };
+    const ytd = compare('Actual');
+    const ytg = compare('Forecast');
+    return { ytdVariance: ytd.variance, ytdVariancePercent: ytd.percent,
+      ytgVariance: ytg.variance, ytgVariancePercent: ytg.percent };
+  }, [varianceMode, currentYearTileVariances, rows, currentDynamicYear]);
+
   const changeForecast = (key, value) => {
     if (!planType) return;
     setRows(prev => prev.map(r => r.key === key && r.kind === 'Forecast' ? { ...r, value: Math.max(0, Number(value) || 0) } : r));
@@ -536,7 +558,8 @@ function Dashboard() {
   };
 
   const submitPlan = async () => {
-    if (!planType || !selectedPlan) return;
+    if (!planType || !selectedPlan || forecastSubmitting) return;
+    setForecastSubmitting(true);
 
     const userEmail = localStorage.getItem('user_email') ||
                       localStorage.getItem('userEmail') ||
@@ -641,6 +664,8 @@ function Dashboard() {
         : error.message;
       console.error("Submission failed:", detailMessage);
       alert(`Submission failed: ${detailMessage}`);
+    } finally {
+      setForecastSubmitting(false);
     }
   };
 
@@ -753,6 +778,7 @@ function Dashboard() {
 
   return (
     <main className="forecast-dashboard" style={{ position: 'relative' }}>
+      {forecastSubmitting && <div className="page-loading-overlay" role="status" aria-live="polite"><div className="page-loading-content"><div className="page-loading-spinner"/><strong>Submitting Forecast...</strong><span>Please wait while your forecast is being saved.</span></div></div>}
 
       {initialLoading && (
         <div className="full-loader-overlay">
@@ -856,8 +882,8 @@ function Dashboard() {
                 value={formatDisplayNumber(actualCurrentYear)}
                 suffix="9L"
                 details={[
-                  { label: 'YTD Variance', value: formatDisplayNumber(currentYearTileVariances.ytdVariance) },
-                  { label: 'YTD Variance %', value: currentYearTileVariances.ytdVariancePercent === null ? '—' : formatDisplayPercent(currentYearTileVariances.ytdVariancePercent) }
+                  { label: varianceMode === 'budget' ? 'YTD vBUD' : 'YTD vPY', value: formatDisplayNumber(displayedTileVariances.ytdVariance) },
+                  { label: varianceMode === 'budget' ? 'YTD vBUD %' : 'YTD vPY %', value: displayedTileVariances.ytdVariancePercent === null ? '—' : formatDisplayPercent(displayedTileVariances.ytdVariancePercent) }
                 ]}
               />
               <Metric
@@ -865,14 +891,19 @@ function Dashboard() {
                 value={formatDisplayNumber(forecastCurrentYear)}
                 suffix="9L"
                 details={[
-                  { label: 'YTG Variance', value: formatDisplayNumber(currentYearTileVariances.ytgVariance) },
-                  { label: 'YTG Variance %', value: currentYearTileVariances.ytgVariancePercent === null ? '—' : formatDisplayPercent(currentYearTileVariances.ytgVariancePercent) }
+                  { label: varianceMode === 'budget' ? 'YTG vBUD' : 'YTG vPY', value: formatDisplayNumber(displayedTileVariances.ytgVariance) },
+                  { label: varianceMode === 'budget' ? 'YTG vBUD %' : 'YTG vPY %', value: displayedTileVariances.ytgVariancePercent === null ? '—' : formatDisplayPercent(displayedTileVariances.ytgVariancePercent) }
                 ]}
               />
               <Metric label={`${currentDynamicYear} Total`} value={formatDisplayNumber(yearTotal)} suffix="9L" emphasize />
               <Metric label="Annual Target" value={formatDisplayNumber(annualTargetBudget)} suffix="9L" />
             </div>
 
+            <div className="variance-toggle" role="group" aria-label="Variance comparison">
+              <span>Variance comparison</span>
+              <button type="button" aria-pressed={varianceMode === 'budget'} className={varianceMode === 'budget' ? 'selected' : ''} onClick={() => setVarianceMode('budget')}>Current Year Variance</button>
+              <button type="button" aria-pressed={varianceMode === 'prior'} className={varianceMode === 'prior' ? 'selected' : ''} onClick={() => setVarianceMode('prior')}>Prior Year Variance</button>
+            </div>
             <div className="forecast-view-controls">
               <div>
                 <span className="eyebrow">Forecast Matrix Filters</span>
@@ -1033,8 +1064,8 @@ function Dashboard() {
                       ? (vPyTotal / displayedPriorYearTotal) * 100
                       : null;
 
-                    const showVBud = isCurrentYear && budgetRows.length > 0 && tableFilters.dataCombinations.includes('variance_budget');
-                    const showVPy = isCurrentYear && priorYearRows.length > 0 && tableFilters.dataCombinations.includes('variance_prior_year');
+                    const showVBud = varianceMode === "budget" && isCurrentYear && budgetRows.length > 0 && tableFilters.dataCombinations.includes('variance_budget');
+                    const showVPy = varianceMode === "prior" && isCurrentYear && priorYearRows.length > 0 && tableFilters.dataCombinations.includes('variance_prior_year');
 
                     return (
                       <React.Fragment key={year}>
@@ -1233,7 +1264,7 @@ function Dashboard() {
               <div className="save-note">{saved ? '✓ Submitted successfully to backend.' : planType ? 'Editing active. Submit when finished.' : 'View Mode.'}</div>
               <div className="actions">
                 <button className="secondary" onClick={resetView}>Reset / View Mode</button>
-                <button className="primary" disabled={!planType} onClick={submitPlan}>Submit Forecast</button>
+                <button className="primary" disabled={!planType || forecastSubmitting} onClick={submitPlan}>Submit Forecast</button>
               </div>
             </footer>
           </section>

@@ -3,6 +3,7 @@ import Navbar from "../components/Navbar";
 import Home from "../Pages/Home/Home";
 import Login from "../Pages/Login/Login";
 import Dashboard from "../Pages/Dashboard/Dashboard";
+import Summary from "../Pages/Summary";
 
 function AppRoutes() {
   return (
@@ -14,6 +15,7 @@ function AppRoutes() {
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/summary" element={<Summary />} />
           </Routes>
         </main>
       </div>

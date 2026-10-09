@@ -61,6 +61,12 @@ function Navbar() {
                 </Link>
               </li>
               <li className="navbar-item">
+                <Link to="/summary" className={`navbar-link ${location.pathname === '/summary' ? 'active' : ''}`} onClick={closeMenu}>
+                  <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19V9"/><path d="M10 19V5"/><path d="M16 19v-7"/><path d="M22 19H2"/></svg>
+                  Summary
+                </Link>
+              </li>
+              <li className="navbar-item">
                 <button onClick={handleLogout} className="navbar-link logout-btn">
                   <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>

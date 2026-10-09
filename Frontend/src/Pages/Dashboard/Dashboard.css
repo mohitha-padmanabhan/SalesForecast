@@ -551,3 +551,13 @@ html,body,#root{min-height:100%;height:auto;overflow-y:auto!important;overflow-x
 
 /* Filter reset controls */
 .filter-title-actions{display:flex;align-items:center;gap:12px}.clear-filters-btn{height:34px;padding:0 14px;border:1px solid #ced9e3;border-radius:8px;background:#fff;color:#082744;font-weight:800;cursor:pointer}.clear-filters-btn:hover:not(:disabled){background:#f3f6f8;border-color:#082744}.clear-filters-btn:disabled{opacity:.55;cursor:not-allowed}@media(max-width:520px){.filter-title-actions small{display:none}.clear-filters-btn{height:32px;padding:0 10px}}
+
+/* Variance view and blocking API operation overlay */
+.variance-toggle{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:6px;margin:14px 0;padding:5px 0;color:#254766;font-weight:700;font-size:13px}
+.variance-toggle span{margin-right:10px}.variance-toggle button{border:1px solid #c7d8e7;background:#fff;color:#0b2b4c;padding:10px 14px;border-radius:9px;cursor:pointer;font-weight:700}
+.variance-toggle button.selected{background:#082e4e;color:#fff;border-color:#082e4e}
+.page-loading-overlay{position:fixed;inset:0;z-index:99999;background:rgba(9,29,50,.48);display:flex;align-items:center;justify-content:center;cursor:wait}
+.page-loading-content{background:white;border-radius:18px;padding:36px 45px;box-shadow:0 20px 65px rgba(0,0,0,.18);display:flex;flex-direction:column;align-items:center;gap:12px;color:#082e4e;text-align:center}
+.page-loading-content strong{font-size:21px}.page-loading-content span{font-size:13px;color:#60778d}
+.page-loading-spinner{width:46px;height:46px;border:5px solid #dce9f3;border-top-color:#e41e49;border-radius:50%;animation:forecast-loading-spin .8s linear infinite}
+@keyframes forecast-loading-spin{to{transform:rotate(360deg)}}
