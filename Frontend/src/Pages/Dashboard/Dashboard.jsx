@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  fetchFilterOptions,
-  fetchGridData,
-  submitForecastAdjustments,
+import { 
+  fetchFilterOptions, 
+  fetchGridData, 
+  submitForecastAdjustments, 
   fetchItemMasterData,
   fetchExistingDemandPlanIds,
   createNewPlanningItem
@@ -49,7 +49,7 @@ function makeDynamicRows(plan) {
   });
 
   const currentYear = new Date().getFullYear();
-  const yearsList = extractedYears.size > 0
+  const yearsList = extractedYears.size > 0 
     ? Array.from(extractedYears).sort((a, b) => a - b)
     : [currentYear - 2, currentYear - 1, currentYear, currentYear + 1];
 
@@ -66,9 +66,9 @@ function makeDynamicRows(plan) {
       let kind = 'Actual';
       let value = 0;
       let budgetVal = budgetArr[idx] !== undefined && budgetArr[idx] !== null ? Number(budgetArr[idx]) : null;
-
-      let previouslyForecasted = prevForecastsArr[idx] !== undefined && prevForecastsArr[idx] !== null
-        ? Number(prevForecastsArr[idx])
+      
+      let previouslyForecasted = prevForecastsArr[idx] !== undefined && prevForecastsArr[idx] !== null 
+        ? Number(prevForecastsArr[idx]) 
         : null;
 
       if (year < currentYear) {
@@ -109,15 +109,15 @@ function makeDynamicRows(plan) {
 function Dashboard() {
   const navigate = useNavigate();
   const [tempTotalInputs, setTempTotalInputs] = useState({});
-  const [filters, setFilters] = useState({
-    state: 'All',
-    chainStatus: 'All',
-    premiseType: 'All',
-    topChain: 'All',
-    dateVersion: '',
-    brandType: 'All'
+  const [filters, setFilters] = useState({ 
+    state: 'All', 
+    chainStatus: 'All', 
+    premiseType: 'All', 
+    topChain: 'All', 
+    dateVersion: '', 
+    brandType: 'All' 
   });
-
+  
   const [filterOptions, setFilterOptions] = useState({
     states: [],
     chainStatuses: [],
@@ -136,13 +136,13 @@ function Dashboard() {
   const [saved, setSaved] = useState(false);
   const [latestLoadTimestamp, setLatestLoadTimestamp] = useState('');
   const [latestDateVersion, setLatestDateVersion] = useState('');
-
+  
   const [initialLoading, setInitialLoading] = useState(true);
   const [loading, setLoading] = useState(false);
-
-  const [tableFilters, setTableFilters] = useState({
-    years: [],
-    dataCombinations: COMBINATION_OPTIONS.map(c => c.value)
+  
+  const [tableFilters, setTableFilters] = useState({ 
+    years: [], 
+    dataCombinations: COMBINATION_OPTIONS.map(c => c.value) 
   });
 
   const [isYearDropdownOpen, setIsYearDropdownOpen] = useState(false);
@@ -194,7 +194,7 @@ function Dashboard() {
       setInitialLoading(true);
       try {
         const data = await fetchFilterOptions();
-
+        
         setFilterOptions({
           states: data.states || [],
           chainStatuses: data.chain_statuses || ["CHAIN", "INDEPENDENT"],
@@ -206,10 +206,10 @@ function Dashboard() {
 
         const defaultVersion = data.default_date_version || (data.date_versions && data.date_versions[0]) || '';
         setLatestDateVersion(defaultVersion);
-
-        setFilters(prev => ({
-          ...prev,
-          dateVersion: defaultVersion
+        
+        setFilters(prev => ({ 
+          ...prev, 
+          dateVersion: defaultVersion 
         }));
 
 
@@ -386,7 +386,7 @@ function Dashboard() {
   const dynamicYears = useMemo(() => {
     const set = new Set(rows.map(r => r.year));
     return Array.from(set).sort((a, b) => a - b);
-  }, [rows]);
+  }, [rows]); 
 
   useEffect(() => {
     if (dynamicYears.length > 0 && tableFilters.years.length === 0) {
@@ -493,13 +493,13 @@ function Dashboard() {
       if (r.year === year && r.kind === 'Forecast') {
         const baseCell = baselineForecastRows.find(b => b.key === r.key);
         const baseVal = baseCell ? baseCell.value : r.value;
-        const proportion = baselineTotal > 0
-          ? baseVal / baselineTotal
+        const proportion = baselineTotal > 0 
+          ? baseVal / baselineTotal 
           : 1 / baselineForecastRows.length;
 
-        return {
-          ...r,
-          value: Number((remainingForForecast * proportion).toFixed(2))
+        return { 
+          ...r, 
+          value: Number((remainingForForecast * proportion).toFixed(2)) 
         };
       }
       return r;
@@ -561,9 +561,9 @@ function Dashboard() {
     if (!planType || !selectedPlan || forecastSubmitting) return;
     setForecastSubmitting(true);
 
-    const userEmail = localStorage.getItem('user_email') ||
-                      localStorage.getItem('userEmail') ||
-                      localStorage.getItem('user') ||
+    const userEmail = localStorage.getItem('user_email') || 
+                      localStorage.getItem('userEmail') || 
+                      localStorage.getItem('user') || 
                       'user@company.com';
 
     const initialRows = makeDynamicRows(selectedPlan);
@@ -659,8 +659,8 @@ function Dashboard() {
         await loadForecastData(filters.dateVersion);
       }
     } catch (error) {
-      const detailMessage = error?.response?.data?.detail
-        ? JSON.stringify(error.response.data.detail)
+      const detailMessage = error?.response?.data?.detail 
+        ? JSON.stringify(error.response.data.detail) 
         : error.message;
       console.error("Submission failed:", detailMessage);
       alert(`Submission failed: ${detailMessage}`);
@@ -691,8 +691,8 @@ function Dashboard() {
       const exists = prev.dataCombinations.includes(val);
       return {
         ...prev,
-        dataCombinations: exists
-          ? prev.dataCombinations.filter(c => c !== val)
+        dataCombinations: exists 
+          ? prev.dataCombinations.filter(c => c !== val) 
           : [...prev.dataCombinations, val]
       };
     });
@@ -701,8 +701,8 @@ function Dashboard() {
   const toggleAllCombos = () => {
     setTableFilters(prev => ({
       ...prev,
-      dataCombinations: prev.dataCombinations.length === COMBINATION_OPTIONS.length
-        ? []
+      dataCombinations: prev.dataCombinations.length === COMBINATION_OPTIONS.length 
+        ? [] 
         : COMBINATION_OPTIONS.map(c => c.value)
     }));
   };
@@ -779,7 +779,7 @@ function Dashboard() {
   return (
     <main className="forecast-dashboard" style={{ position: 'relative' }}>
       {forecastSubmitting && <div className="page-loading-overlay" role="status" aria-live="polite"><div className="page-loading-content"><div className="page-loading-spinner"/><strong>Submitting Forecast...</strong><span>Please wait while your forecast is being saved.</span></div></div>}
-
+      
       {initialLoading && (
         <div className="full-loader-overlay">
           <div className="spinner-lg"></div>
@@ -826,7 +826,7 @@ function Dashboard() {
           <Filter label="Premise Type" value={filters.premiseType} options={filterOptions.premiseTypes} onChange={v => setFilters(prev => ({ ...prev, premiseType: v }))} disabled={loading || initialLoading} />
           <Filter label="Top Chain" value={filters.topChain} options={filterOptions.topChains} onChange={v => setFilters(prev => ({ ...prev, topChain: v }))} disabled={loading || initialLoading} />
           <Filter label="Date Version" value={filters.dateVersion} options={filterOptions.versions} onChange={v => setFilters(prev => ({ ...prev, dateVersion: v }))} required disabled={loading || initialLoading} />
-          <Filter label="Brand Type (optional)" value={filters.brandType} options={filterOptions.brands} onChange={v => setFilters(prev => ({ ...prev, brandType: v }))} disabled={loading || initialLoading} />
+          <Filter label="Brand Type" value={filters.brandType} options={filterOptions.brands} onChange={v => setFilters(prev => ({ ...prev, brandType: v }))} disabled={loading || initialLoading} />
         </div>
       </section>
 
@@ -843,9 +843,9 @@ function Dashboard() {
           </div>
           <div className="planning-list">
             {gridData.map(plan => (
-              <button
-                key={plan.planning_id}
-                onClick={() => choosePlan(plan)}
+              <button 
+                key={plan.planning_id} 
+                onClick={() => choosePlan(plan)} 
                 className={`plan-card ${selectedId === plan.planning_id ? 'selected' : ''}`}
               >
                 <div className="plan-id-tag">{plan.planning_id}</div>
@@ -853,8 +853,8 @@ function Dashboard() {
             ))}
             {(!gridData.length || !isAnyFilterSelected) && !initialLoading && (
               <div className="empty-state">
-                {!isAnyFilterSelected
-                  ? "Select top filter(s) to view planning IDs."
+                {!isAnyFilterSelected 
+                  ? "Select top filter(s) to view planning IDs." 
                   : "No planning IDs match the selected filters."}
               </div>
             )}
@@ -901,8 +901,8 @@ function Dashboard() {
 
             <div className="variance-toggle" role="group" aria-label="Variance comparison">
               <span>Variance comparison</span>
-              <button type="button" aria-pressed={varianceMode === 'budget'} className={varianceMode === 'budget' ? 'selected' : ''} onClick={() => setVarianceMode('budget')}>Current Year Variance</button>
-              <button type="button" aria-pressed={varianceMode === 'prior'} className={varianceMode === 'prior' ? 'selected' : ''} onClick={() => setVarianceMode('prior')}>Prior Year Variance</button>
+              <button type="button" aria-pressed={varianceMode === 'budget'} className={varianceMode === 'budget' ? 'selected' : ''} onClick={() => setVarianceMode('budget')}>Variance to Budget</button>
+              <button type="button" aria-pressed={varianceMode === 'prior'} className={varianceMode === 'prior' ? 'selected' : ''} onClick={() => setVarianceMode('prior')}>Variance to Prior Year</button>
             </div>
             <div className="forecast-view-controls">
               <div>
@@ -910,21 +910,21 @@ function Dashboard() {
                 <strong>Filter Matrix by Year and Data Combinations</strong>
               </div>
               <div className="table-filter-group flex-row">
-
+                
                 <div className="custom-multiselect-container" ref={yearDropdownRef}>
                   <span className="filter-label-title">Year Filter</span>
-                  <div
-                    className="multiselect-trigger"
+                  <div 
+                    className="multiselect-trigger" 
                     onClick={() => {
                       setIsYearDropdownOpen(!isYearDropdownOpen);
                       setIsComboDropdownOpen(false);
                     }}
                   >
                     <span>
-                      {tableFilters.years.length === 0
-                        ? 'Select Years'
-                        : tableFilters.years.length === dynamicYears.length
-                          ? 'All Years'
+                      {tableFilters.years.length === 0 
+                        ? 'Select Years' 
+                        : tableFilters.years.length === dynamicYears.length 
+                          ? 'All Years' 
                           : `${tableFilters.years.length} Selected`}
                     </span>
                     <span className="arrow">{isYearDropdownOpen ? '▲' : '▼'}</span>
@@ -933,20 +933,20 @@ function Dashboard() {
                   {isYearDropdownOpen && (
                     <div className="multiselect-dropdown">
                       <label className="multiselect-option header-option">
-                        <input
-                          type="checkbox"
-                          checked={tableFilters.years.length === dynamicYears.length && dynamicYears.length > 0}
-                          onChange={toggleAllYears}
+                        <input 
+                          type="checkbox" 
+                          checked={tableFilters.years.length === dynamicYears.length && dynamicYears.length > 0} 
+                          onChange={toggleAllYears} 
                         />
                         <span><strong>(Select All)</strong></span>
                       </label>
                       <hr style={{ margin: '4px 0', border: 'none', borderTop: '1px solid #e2e8f0' }} />
                       {dynamicYears.map(year => (
                         <label key={year} className="multiselect-option">
-                          <input
-                            type="checkbox"
-                            checked={tableFilters.years.includes(year)}
-                            onChange={() => toggleYearSelection(year)}
+                          <input 
+                            type="checkbox" 
+                            checked={tableFilters.years.includes(year)} 
+                            onChange={() => toggleYearSelection(year)} 
                           />
                           <span>{year}</span>
                         </label>
@@ -957,18 +957,18 @@ function Dashboard() {
 
                 <div className="custom-multiselect-container" ref={comboDropdownRef}>
                   <span className="filter-label-title">View Combination Filter</span>
-                  <div
-                    className="multiselect-trigger"
+                  <div 
+                    className="multiselect-trigger" 
                     onClick={() => {
                       setIsComboDropdownOpen(!isComboDropdownOpen);
                       setIsYearDropdownOpen(false);
                     }}
                   >
                     <span>
-                      {tableFilters.dataCombinations.length === 0
-                        ? 'Select Combinations'
-                        : tableFilters.dataCombinations.length === COMBINATION_OPTIONS.length
-                          ? 'All Combinations'
+                      {tableFilters.dataCombinations.length === 0 
+                        ? 'Select Combinations' 
+                        : tableFilters.dataCombinations.length === COMBINATION_OPTIONS.length 
+                          ? 'All Combinations' 
                           : `${tableFilters.dataCombinations.length} Selected`}
                     </span>
                     <span className="arrow">{isComboDropdownOpen ? '▲' : '▼'}</span>
@@ -977,20 +977,20 @@ function Dashboard() {
                   {isComboDropdownOpen && (
                     <div className="multiselect-dropdown">
                       <label className="multiselect-option header-option">
-                        <input
-                          type="checkbox"
-                          checked={tableFilters.dataCombinations.length === COMBINATION_OPTIONS.length}
-                          onChange={toggleAllCombos}
+                        <input 
+                          type="checkbox" 
+                          checked={tableFilters.dataCombinations.length === COMBINATION_OPTIONS.length} 
+                          onChange={toggleAllCombos} 
                         />
                         <span><strong>(Select All)</strong></span>
                       </label>
                       <hr style={{ margin: '4px 0', border: 'none', borderTop: '1px solid #e2e8f0' }} />
                       {COMBINATION_OPTIONS.map(opt => (
                         <label key={opt.value} className="multiselect-option">
-                          <input
-                            type="checkbox"
-                            checked={tableFilters.dataCombinations.includes(opt.value)}
-                            onChange={() => toggleComboSelection(opt.value)}
+                          <input 
+                            type="checkbox" 
+                            checked={tableFilters.dataCombinations.includes(opt.value)} 
+                            onChange={() => toggleComboSelection(opt.value)} 
                           />
                           <span>{opt.label}</span>
                         </label>
@@ -1007,7 +1007,7 @@ function Dashboard() {
               <div className="legend">
                 <span><i className="dot actual"></i>Actuals</span>
                 <span><i className="dot forecast"></i>Forecast</span>
-                <span><i className="dot previous"></i>Statistical Forecast</span>
+                <span><i className="dot previous"></i>Statistical Forecast</span> 
                 <span><i className="dot budget"></i>Budget</span>
               </div>
             </div>
@@ -1024,7 +1024,7 @@ function Dashboard() {
                 <tbody>
                   {visibleYears.map(year => {
                     const yearRows = rows.filter(r => r.year === year);
-
+                    
                     const isEditableYear = planType === 'year' && year >= currentDynamicYear;
                     const prevForecastRows = yearRows.filter(r => r.previouslyForecasted !== null);
                     const prevTotal = prevForecastRows.reduce((s, r) => s + (r.previouslyForecasted || 0), 0);
@@ -1140,7 +1140,7 @@ function Dashboard() {
 
                         {showBudgetRow && (
                           <tr className="budget-row">
-                            <th className="year-cell budget-label">{year === currentDynamicYear + 1 ? `Prelims (${year})` : `Budget (${year})`}</th>
+                            <th className="year-cell budget-label">{year === currentDynamicYear + 1 ? `Statistical Forecast (${year})` : `Budget (${year})`}</th>
                             {MONTHS.map((month, idx) => {
                               const row = yearRows.find(r => r.monthIndex === idx);
                               const bVal = row ? row.budgetVal : null;
@@ -1286,11 +1286,11 @@ function Dashboard() {
               <h3>Add New Planning Item</h3>
               <button className="close-btn" onClick={handleCloseModal}>&times;</button>
             </div>
-
+            
             <form onSubmit={handleCreateNewItem} className="modal-body">
               <div className="form-group">
                 <label>Item Master Demand Plan ID</label>
-                <select
+                <select 
                   value={newItemForm.demandPlanId}
                   onChange={e => setNewItemForm({ ...newItemForm, demandPlanId: e.target.value })}
                   required
@@ -1309,7 +1309,7 @@ function Dashboard() {
 
               <div className="form-group">
                 <label>Brand</label>
-                <select
+                <select 
                   value={newItemForm.brand}
                   onChange={e => setNewItemForm({ ...newItemForm, brand: e.target.value })}
                   required
@@ -1323,7 +1323,7 @@ function Dashboard() {
 
               <div className="form-group">
                 <label>State</label>
-                <select
+                <select 
                   value={newItemForm.state}
                   onChange={e => setNewItemForm({ ...newItemForm, state: e.target.value })}
                   required
@@ -1339,21 +1339,21 @@ function Dashboard() {
                 <label>Template Choice</label>
                 <div className="radio-group">
                   <label className="radio-label">
-                    <input
-                      type="radio"
-                      name="templateChoice"
-                      value="new"
+                    <input 
+                      type="radio" 
+                      name="templateChoice" 
+                      value="new" 
                       checked={newItemForm.templateChoice === 'new'}
                       onChange={e => setNewItemForm({ ...newItemForm, templateChoice: e.target.value })}
                     />
                     <span>New Template Choice</span>
                   </label>
-
+                  
                   <label className="radio-label">
-                    <input
-                      type="radio"
-                      name="templateChoice"
-                      value="existing"
+                    <input 
+                      type="radio" 
+                      name="templateChoice" 
+                      value="existing" 
                       checked={newItemForm.templateChoice === 'existing'}
                       onChange={e => setNewItemForm({ ...newItemForm, templateChoice: e.target.value })}
                     />
@@ -1365,7 +1365,7 @@ function Dashboard() {
               {newItemForm.templateChoice === 'existing' && (
                 <div className="form-group conditional-group">
                   <label>Existing Demand Plan ID (from 24monforecast)</label>
-                  <select
+                  <select 
                     value={newItemForm.existingDemandPlanId}
                     onChange={e => setNewItemForm({ ...newItemForm, existingDemandPlanId: e.target.value })}
                     required
@@ -1410,7 +1410,7 @@ function Filter({ label, value, options, onChange, required, disabled }) {
   );
 }
 
-function Metric({ label, value, suffix, emphasize, details = [] }) {
+function Metric({ label, value, suffix, emphasize, details = [] }) { 
   return (
     <div className={`metric ${emphasize ? 'emphasize' : ''}`}>
       <span>{label}</span>
@@ -1427,7 +1427,7 @@ function Metric({ label, value, suffix, emphasize, details = [] }) {
         </div>
       )}
     </div>
-  );
+  ); 
 }
 
 export default Dashboard;
