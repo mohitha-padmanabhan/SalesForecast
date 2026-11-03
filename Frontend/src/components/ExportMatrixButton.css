@@ -1,0 +1,11 @@
+.matrix-export-control{display:inline-flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0}
+.matrix-export-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap;padding:9px 13px;border:1px solid #082744;border-radius:8px;background:#082744;color:#fff;font-size:12px;font-weight:700;cursor:pointer;min-height:36px}
+.matrix-export-button:hover:not(:disabled){background:#12466f}
+.matrix-export-button:focus-visible{outline:3px solid #72b6ec;outline-offset:2px}
+.matrix-export-button:disabled{opacity:.5;cursor:not-allowed}
+.matrix-export-error{font-size:12px;color:#b61234;max-width:240px;white-space:normal}
+.matrix-dialog-header>.matrix-dialog-actions{display:flex;align-items:center;gap:12px}
+.matrix-dialog-header .matrix-export-button{background:#082744;color:#fff}
+@media(max-width:700px){.matrix-dialog-header{flex-wrap:wrap}.matrix-export-control{align-items:flex-start}.matrix-controls{flex-wrap:wrap}}
+.matrix-note:has(.matrix-export-control){flex-wrap:wrap}
+.matrix-controls:has(.matrix-export-control){align-items:flex-end}

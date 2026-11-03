@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, status, Query
 from fastapi.encoders import jsonable_encoder
 from typing import List
 from app.schemas import ItemMasterSchema,AddNewItemPayload
-from app.services.forecast_engine import fetch_item_master_data, create_new_planning_item
+from app.services.forecast_engine import fetch_item_master_data, create_new_planning_item, fetch_existing_planning_ids
 from app.schemas import FilterParams, SubmitPayload
 from app.services.forecast_engine import run_sql_query_fast, process_and_submit_adjustments
 
@@ -70,6 +70,14 @@ def get_item_master_data(brand: str = Query("All")):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch item master details: {str(e)}"
         )
+
+@router.get("/existing-ids")
+def get_existing_ids(brand: str = Query("All"), state: str = Query("All")):
+    """Return only IDs; avoid full forecast calculations when opening Add Item."""
+    try:
+        return fetch_existing_planning_ids(brand, state)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Failed to check existing planning items.") from exc
 
 @router.post("/add-item")
 def add_new_planning_item(payload: AddNewItemPayload):

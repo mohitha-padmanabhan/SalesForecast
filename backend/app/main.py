@@ -1,12 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import filters, forecast
-from app.routers import auth
+from app.routers import filters, forecast, auth
 import os
 
 app = FastAPI(title="Sales Forecast Engine")
 
-# Configure CORS origins
 origins = [
     "http://localhost:3000",
     "http://localhost:5173",
@@ -16,7 +14,7 @@ origins = [
 frontend_url = os.getenv("FRONTEND_URL")
 
 if frontend_url:
-    origins.append(frontend_url)
+    origins.append(frontend_url.rstrip("/"))
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,7 +24,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register endpoints
 app.include_router(filters.router, prefix="/api/v1")
 app.include_router(forecast.router, prefix="/api/v1")
 app.include_router(auth.router)

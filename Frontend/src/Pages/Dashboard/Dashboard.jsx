@@ -9,6 +9,7 @@ import {
   createNewPlanningItem
 } from '../../api/forecastApi';
 import './Dashboard.css';
+import ExportMatrixButton from '../../components/ExportMatrixButton';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -164,13 +165,44 @@ function Dashboard() {
   const [demandPlanOptions, setDemandPlanOptions] = useState([]);
   const [existingForecastPlanIds, setExistingForecastPlanIds] = useState([]);
   const [loadingModalIds, setLoadingModalIds] = useState(false);
+  const [modalIdsKey, setModalIdsKey] = useState('');
+  const [modalIdsError, setModalIdsError] = useState('');
+  const [matrixExpanded, setMatrixExpanded] = useState(false);
+  const matrixDialogRef = useRef(null);
+  const matrixTableRef = useRef(null);
+  const expandButtonRef = useRef(null);
+  const forecastRequestRef = useRef(0);
+  const duplicateCheckPending = loadingModalIds || modalIdsKey !== JSON.stringify([newItemForm.brand, newItemForm.state]);
+
+  useEffect(() => {
+    if (!matrixExpanded) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const dialog = matrixDialogRef.current;
+    dialog?.querySelector('button')?.focus();
+    const onKey = event => {
+      if (event.key === 'Escape') setMatrixExpanded(false);
+      if (event.key === 'Tab') {
+        const controls = [...dialog.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),[tabindex="0"]')].filter(el => el.getClientRects().length);
+        const first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKey);
+      expandButtonRef.current?.focus();
+    };
+  }, [matrixExpanded]);
 
   const yearDropdownRef = useRef(null);
   const comboDropdownRef = useRef(null);
 
   const isIdAlreadyExisting = useMemo(() => {
     if (!newItemForm.demandPlanId) return false;
-    return existingForecastPlanIds.includes(newItemForm.demandPlanId);
+    return existingForecastPlanIds.some(id => String(id).trim().toLowerCase() === newItemForm.demandPlanId.trim().toLowerCase());
   }, [newItemForm.demandPlanId, existingForecastPlanIds]);
 
   const isAnyFilterSelected = useMemo(() => {
@@ -299,23 +331,25 @@ function Dashboard() {
   useEffect(() => {
     if (!isModalOpen) return;
 
+    let active = true;
+    const key = JSON.stringify([newItemForm.brand, newItemForm.state]);
+    setLoadingModalIds(true);
+    setModalIdsKey('');
+    setModalIdsError('');
+    setExistingForecastPlanIds([]);
     const updateModalExistingIds = async () => {
-      setLoadingModalIds(true);
       try {
-        const modalFilters = {
-          brand: newItemForm.brand || "All",
-          state: newItemForm.state || "All"
-        };
-        const filteredIds = await fetchExistingDemandPlanIds(modalFilters);
-        setExistingForecastPlanIds(filteredIds);
+        const ids = await fetchExistingDemandPlanIds({brand: newItemForm.brand || 'All', state: newItemForm.state || 'All'});
+        if (active) { setExistingForecastPlanIds(ids); setModalIdsKey(key); }
       } catch (err) {
+        if (active) setModalIdsError('Unable to check existing items. Reopen this dialog to retry.');
         console.error('Failed to load modal demand plan IDs:', err);
       } finally {
-        setLoadingModalIds(false);
+        if (active) setLoadingModalIds(false);
       }
     };
-
     updateModalExistingIds();
+    return () => { active = false; };
   }, [newItemForm.brand, newItemForm.state, isModalOpen]);
 
   useEffect(() => {
@@ -332,7 +366,9 @@ function Dashboard() {
   }, []);
 
   const loadForecastData = useCallback(async (activeVersion) => {
+    const requestId = ++forecastRequestRef.current;
     if (!isAnyFilterSelected) {
+      setLoading(false);
       setGridData([]);
       setSelectedId('');
       setRows([]);
@@ -352,6 +388,7 @@ function Dashboard() {
       };
 
       const resData = await fetchGridData(payload);
+      if (requestId !== forecastRequestRef.current) return;
       const items = [...(resData.grid_data || [])].sort((a, b) =>
         String(a?.planning_id || '').localeCompare(String(b?.planning_id || ''), undefined, { sensitivity: 'base', numeric: true })
       );
@@ -371,15 +408,16 @@ function Dashboard() {
         setAnnualTarget(0);
       }
     } catch (err) {
-      console.error('Failed to fetch forecast grid:', err);
+      if (requestId === forecastRequestRef.current) console.error('Failed to fetch forecast grid:', err);
     } finally {
-      setLoading(false);
+      if (requestId === forecastRequestRef.current) setLoading(false);
     }
   }, [filters, isAnyFilterSelected]);
 
   useEffect(() => {
     if (!initialLoading) {
-      loadForecastData(filters.dateVersion);
+      const timer = setTimeout(() => loadForecastData(filters.dateVersion), 180);
+      return () => { clearTimeout(timer); forecastRequestRef.current += 1; };
     }
   }, [filters.state, filters.chainStatus, filters.premiseType, filters.topChain, filters.dateVersion, filters.brandType, initialLoading, loadForecastData]);
 
@@ -707,7 +745,25 @@ function Dashboard() {
     }));
   };
 
+  const exportMetadata = {
+    'Planning ID': selectedId,
+    'State': filters.state,
+    'Chain Status': filters.chainStatus,
+    'Premise Type': filters.premiseType,
+    'Top Chain': filters.topChain,
+    'Brand': filters.brandType,
+    'Date Version': filters.dateVersion,
+    'Years': tableFilters.years.join(', '),
+    'View': tableFilters.dataCombinations.map(value => COMBINATION_OPTIONS.find(option => option.value === value)?.label || value).join(', '),
+    'Variance comparison': varianceMode === 'budget' ? 'Current Year (vBUD)' : 'Prior Year (vPY)',
+    'Values': planType ? 'Displayed values including unsaved edits' : 'Displayed values',
+    'Units': '9L cases; variance percentage rows are percentages'
+  };
+  const exportMatrixButton = <ExportMatrixButton tableRef={matrixTableRef} title="Monthly Forecast Matrix" filename={`Forecast_${selectedId || 'Matrix'}`} metadata={exportMetadata} disabled={loading || initialLoading || forecastSubmitting || !rows.length || !tableFilters.years.length} />;
+
   const handleOpenModal = () => {
+    setModalIdsKey('');
+    setModalIdsError('');
     setNewItemForm(prev => ({
       ...prev,
       brand: filters.brandType !== 'All' ? filters.brandType : prev.brand
@@ -728,6 +784,7 @@ function Dashboard() {
 
   const handleCreateNewItem = async (e) => {
     e.preventDefault();
+    if (submittingModal || duplicateCheckPending || modalIdsError || isIdAlreadyExisting) return;
 
     if (!newItemForm.demandPlanId || !newItemForm.brand || !newItemForm.state) {
       alert("Please fill in all required fields.");
@@ -1010,10 +1067,16 @@ function Dashboard() {
                 <span><i className="dot previous"></i>Statistical Forecast</span> 
                 <span><i className="dot budget"></i>Budget</span>
               </div>
+            {exportMatrixButton}
+            <button type="button" className="matrix-expand-button" ref={expandButtonRef} onClick={() => setMatrixExpanded(true)} title="Expand forecast matrix" aria-label="Expand forecast matrix">⛶</button>
             </div>
 
+
+            <div className={matrixExpanded ? 'matrix-dialog-overlay' : ''}>
+            <div ref={matrixDialogRef} className={matrixExpanded ? 'matrix-dialog' : ''} role={matrixExpanded ? 'dialog' : undefined} aria-modal={matrixExpanded ? true : undefined} aria-label={matrixExpanded ? 'Expanded monthly forecast matrix' : undefined}>
+            {matrixExpanded && <header className="matrix-dialog-header"><div><strong>{selectedId} — Monthly Forecast</strong><p>All 12 months · Changes use the same forecast inputs</p></div><div className="matrix-dialog-actions">{exportMatrixButton}<button type="button" onClick={() => setMatrixExpanded(false)} aria-label="Close expanded matrix">Close ×</button></div></header>}
             <div className="forecast-matrix-wrap">
-              <table className="forecast-matrix">
+              <table className="forecast-matrix" ref={matrixTableRef}>
                 <thead>
                   <tr>
                     <th className="year-col">Year / Type</th>
@@ -1260,6 +1323,8 @@ function Dashboard() {
               </table>
             </div>
 
+            </div>
+            </div>
             <footer className="action-bar">
               <div className="save-note">{saved ? '✓ Submitted successfully to backend.' : planType ? 'Editing active. Submit when finished.' : 'View Mode.'}</div>
               <div className="actions">
@@ -1381,11 +1446,13 @@ function Dashboard() {
                 </div>
               )}
 
+              {modalIdsError && <p role="alert" className="summary-error">{modalIdsError}</p>}
+              {duplicateCheckPending && <p role="status">Checking existing items…</p>}
               <div className="modal-footer">
                 <button type="button" className="secondary" onClick={handleCloseModal} disabled={submittingModal}>
                   Cancel
                 </button>
-                <button type="submit" className="primary" disabled={submittingModal}>
+                <button type="submit" className="primary" disabled={submittingModal || duplicateCheckPending || !!modalIdsError || isIdAlreadyExisting}>
                   {submittingModal ? 'Creating...' : 'Create'}
                 </button>
               </div>
@@ -1429,5 +1496,4 @@ function Metric({ label, value, suffix, emphasize, details = [] }) {
     </div>
   ); 
 }
-
 export default Dashboard;

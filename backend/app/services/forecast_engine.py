@@ -57,6 +57,21 @@ def fetch_item_master_data(brand: Optional[str] = None):
     df = df.fillna("")  # Ensures safe JSON serialization
     return df.to_dict(orient="records")
 
+def fetch_existing_planning_ids(brand: str = "All", state: str = "All") -> List[str]:
+    clauses, params = [], []
+    for column, value in (("Brand", brand), ("State", state)):
+        if value and value != "All":
+            clauses.append(f"RTRIM(LTRIM([{column}])) = ?")
+            params.append(value.strip())
+    where = " AND ".join(clauses) or "1=1"
+    df = execute_query(f"""
+        SELECT DISTINCT RTRIM(LTRIM([PlanningID])) AS [planning_id]
+        FROM [{settings.FABRIC_SCHEMA}].[{settings.TABLE_FCST_24MO_LOCKED}]
+        WHERE {where} AND [PlanningID] IS NOT NULL
+        ORDER BY [planning_id]
+    """, tuple(params))
+    return [str(value) for value in df["planning_id"].tolist() if str(value).strip()]
+
 def sanitize_float(val: Any) -> float:
     if val is None or pd.isna(val):
         return 0.0
@@ -733,6 +748,10 @@ def create_new_planning_item(payload: AddNewItemPayload) -> Dict[str, Any]:
     new_pid = payload.demand_plan_id.replace("'", "''").strip()
     st = payload.state.replace("'", "''").strip()
     br = payload.brand.replace("'", "''").strip()
+    # Fresh server-side validation also blocks stale clients and direct submissions.
+    existing = fetch_existing_planning_ids(payload.brand, payload.state)
+    if payload.demand_plan_id.strip().casefold() in {pid.strip().casefold() for pid in existing}:
+        raise ValueError("The item already exists for the selected brand and state filters.")
     now = datetime.now()
     selected_version_text = str(payload.date_version or "").strip()
     if not selected_version_text or selected_version_text.lower() in {"all", "latest"}:

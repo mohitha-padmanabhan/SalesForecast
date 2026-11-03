@@ -52,7 +52,7 @@ function Login() {
   };
 
   const handleMicrosoftLogin = () => {
-    const backendBaseUrl = 'http://localhost:8000';
+    const backendBaseUrl = 'https://salesforecast-backend-lxjt.onrender.com';
     window.location.href = `${backendBaseUrl}/auth/microsoft/login`;
   };
 

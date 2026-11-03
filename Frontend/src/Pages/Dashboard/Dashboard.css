@@ -561,3 +561,21 @@ html,body,#root{min-height:100%;height:auto;overflow-y:auto!important;overflow-x
 .page-loading-content strong{font-size:21px}.page-loading-content span{font-size:13px;color:#60778d}
 .page-loading-spinner{width:46px;height:46px;border:5px solid #dce9f3;border-top-color:#e41e49;border-radius:50%;animation:forecast-loading-spin .8s linear infinite}
 @keyframes forecast-loading-spin{to{transform:rotate(360deg)}}
+
+.matrix-expand-button{flex-shrink:0;border:1px solid #ced9e3;border-radius:7px;background:white;color:#082744;font-size:24px;line-height:1;padding:5px 9px;cursor:pointer}
+.matrix-note .legend{margin-left:auto}
+.matrix-dialog-overlay{position:fixed;inset:0;z-index:2000;background:#08274499;padding:16px;display:flex;align-items:center;justify-content:center}
+.matrix-dialog{background:white;border-radius:14px;padding:16px;width:100%;max-height:96vh;overflow:auto;box-shadow:0 20px 80px #0005}
+.matrix-dialog-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;color:#082744}
+.matrix-dialog-header p{margin:5px 0;font-size:12px;color:#627587}
+.matrix-dialog-header button{padding:8px 14px;border:1px solid #ced9e3;border-radius:8px;background:#fff;cursor:pointer}
+.matrix-dialog .forecast-matrix-wrap{max-height:78vh;overflow-x:hidden!important}
+.matrix-dialog .forecast-matrix{width:100%;min-width:0;table-layout:fixed}
+.matrix-dialog .forecast-matrix th,.matrix-dialog .forecast-matrix td{min-width:0;padding:7px 2px;overflow-wrap:anywhere;font-size:clamp(8px,.85vw,13px)}
+.matrix-dialog .forecast-matrix .year-col,.matrix-dialog .forecast-matrix .year-cell{min-width:0;width:9%}
+.matrix-dialog .forecast-matrix .year-total{width:10%}
+.matrix-dialog .forecast-matrix input{width:100%;min-width:0;box-sizing:border-box;padding:0 2px;font-size:clamp(8px,.85vw,13px)}
+.matrix-dialog .forecast-matrix td strong{font-size:inherit}
+.matrix-dialog .forecast-matrix td span{white-space:normal;overflow-wrap:anywhere;font-size:inherit}
+button:disabled{cursor:not-allowed;opacity:.5}
+@media(max-width:700px){.matrix-dialog-overlay{padding:4px}.matrix-dialog{padding:6px}.matrix-note{flex-direction:row;flex-wrap:wrap}.matrix-note .legend{margin-left:0;flex-wrap:wrap}.matrix-dialog .forecast-matrix th,.matrix-dialog .forecast-matrix td{padding:5px 1px;font-size:8px}}

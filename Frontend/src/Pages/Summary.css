@@ -7,3 +7,12 @@
 .summary-sort-arrows{display:inline-flex;flex-direction:column;gap:0;font-size:8px;line-height:9px;color:#7894ac}
 .summary-sort-arrows .active{color:#fff}
 .summary-table .summary-sort-btn:hover .summary-sort-arrows span{color:#d8eaff}
+
+/* Sticky headings and ID column share the same bounded scroll container. */
+.summary-table-wrap:has(.summary-table){max-height:560px;isolation:isolate}
+.summary-table{border-collapse:separate;border-spacing:0}
+.summary-table thead th{position:sticky;top:0;z-index:3}
+.summary-table th:first-child,.summary-table td:first-child{position:sticky;left:0;z-index:2;background:#fff;box-shadow:2px 0 3px #082e4e12}
+.summary-table thead th:first-child{z-index:4;background:#082e4e}
+.summary-table tfoot th{position:sticky;bottom:0;z-index:3;background:#eaf2f8}
+.summary-table tfoot th:first-child{z-index:4;background:#eaf2f8}
