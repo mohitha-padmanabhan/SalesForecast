@@ -84,9 +84,15 @@ def microsoft_callback(request: Request, code: str = Query(None), error: str = Q
 
 
 def set_session_cookie(response, token):
-    response.set_cookie(state_locks.COOKIE, token, httponly=True, samesite='lax', max_age=28800,
-                        secure=settings.FRONTEND_URL.startswith('https://'))
-
+    response.set_cookie(
+        key=state_locks.COOKIE,
+        value=token,
+        httponly=True,
+        samesite="none",
+        max_age=28800,
+        secure=True,
+        path="/"
+    )
 class DemoLogin(BaseModel):
     username: str
     password: str
