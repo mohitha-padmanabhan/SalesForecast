@@ -1,9 +1,11 @@
 import axios from 'axios';
 
-const API_BASE_URL =  import.meta.env.VITE_API_BASE_URL ||
-                      'http://localhost:8000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ||
+                     'http://localhost:8000/api/v1';
 
-const AUTH_BASE_URL = API_BASE_URL.replace(/\/api\/v1\/?$/, '');
+export const AUTH_BASE_URL = API_BASE_URL.replace(/\/api\/v1\/?$/, '');
+
+
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -27,19 +29,27 @@ export const releaseStateEdit = (state, lease, keepalive = false) => fetch(`${AP
   body: JSON.stringify({state})
 });
 export async function verifySession() {
-  const response = await fetch('`${AUTH_BASE_URL}/auth/session', {credentials: 'include'});
+  const response = await fetch(`${AUTH_BASE_URL}/auth/session`, {
+    credentials: 'include'
+  });
   if (!response.ok) throw new Error('Please sign in again to edit forecasts.');
   return response.json();
 }
 export async function demoLogin(username, password) {
-  const response = await fetch('`${AUTH_BASE_URL}/auth/demo-login', {
-    method: 'POST', credentials: 'include', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username, password})
+  const response = await fetch(`${AUTH_BASE_URL}/auth/demo-login`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({username, password})
   });
   if (!response.ok) throw new Error('Invalid username or password');
   return response.json();
 }
 export async function endSession() {
-  const response = await fetch('`${AUTH_BASE_URL}/auth/logout', {method: 'POST', credentials: 'include'});
+  const response = await fetch(`${AUTH_BASE_URL}/auth/logout`, {
+    method: 'POST',
+    credentials: 'include'
+  });
   if (!response.ok) throw new Error('Sign out could not complete. Please try again.');
   clearForecastCache();
 }
