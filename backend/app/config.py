@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     DB_DRIVER: str = "ODBC Driver 18 for SQL Server"
 
-    # Fabric connection
+    # Fabric connection — supplied through environment variables
     TENANT_ID: str
     CLIENT_ID: str
     CLIENT_SECRET: str
@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     TABLE_ITEM_MASTER: str = "item_master"
     TABLE_CHAIN_MASTER: str = "chain_master"
 
-    # Microsoft SSO
+    # Microsoft SSO — supplied through environment variables
     AZURE_MS_AUTH_CLIENT_ID: str
     AZURE_MS_AUTH_CLIENT_SECRET: str
     AZURE_MS_AUTH_TENANT_ID: str

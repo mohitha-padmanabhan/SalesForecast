@@ -1,29 +1,32 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import filters, forecast, auth
-import os
+from app.routers import filters, forecast
+from app.routers import auth
 
 app = FastAPI(title="Sales Forecast Engine")
+app.include_router(filters.router, prefix="/api/v1")
+
+# Configure CORS origins
+from app.config import settings
 
 origins = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://localhost:8080",
+    settings.FRONTEND_URL,
+    "http://localhost:3000",  # React / Next.js default
+    "http://localhost:5173",  # Vite default
+    "http://localhost:8080",  # Vue CLI default
 ]
-
-frontend_url = os.getenv("FRONTEND_URL")
-
-if frontend_url:
-    origins.append(frontend_url.rstrip("/"))
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=origins,  # Use ["*"] in development to allow all
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(filters.router, prefix="/api/v1")
-app.include_router(forecast.router, prefix="/api/v1")
+# Register endpoints
+
+app.include_router(forecast.router)
 app.include_router(auth.router)
+from app.routers import state_locks
+app.include_router(state_locks.router)

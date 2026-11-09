@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import './Login.css';
+import {demoLogin, verifySession, clearForecastCache} from '../../api/forecastApi';
 
 function Login() {
   const [username, setUsername] = useState('');
@@ -16,24 +17,15 @@ function Login() {
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
     const loginSuccess = searchParams.get('login_success');
-    const user = searchParams.get('user');
-    const email = searchParams.get('email'); // Captures email parameter if sent by backend
 
     if (loginSuccess === 'true') {
-      // Log the authenticated user info/email to the console
-      console.log('Microsoft Auth Successful!');
-      console.log('Logged in User/Email:', email || user || 'No email/user payload provided');
-
-      // Save auth state to local storage
-    localStorage.setItem('isLoggedIn', 'true');
-    if (user) localStorage.setItem('user', user);
-    if (email) {
-      localStorage.setItem('user_email', email);
-      localStorage.setItem('userEmail', email); // Keep both for fallback
-    }
-
-      // Programmatically navigate to dashboard
-      navigate('/dashboard', { replace: true });
+      verifySession().then(session => {
+        clearForecastCache();
+        localStorage.setItem('isLoggedIn', 'true');
+        localStorage.setItem('user_email', session.email);
+        localStorage.setItem('userEmail', session.email);
+        navigate('/dashboard', {replace: true});
+      }).catch(err => setError(err.message));
     }
   }, [location, navigate]);
 
@@ -41,18 +33,22 @@ function Login() {
     e.preventDefault();
     setIsLoading(true);
     setError('');
-    await new Promise(resolve => setTimeout(resolve, 900));
-    if (username === 'admin' && password === 'password') {
+    try {
+      const session = await demoLogin(username, password);
+      clearForecastCache();
       localStorage.setItem('isLoggedIn', 'true');
+      localStorage.setItem('user_email', session.email);
+      localStorage.setItem('userEmail', session.email);
       navigate('/dashboard');
-    } else {
-      setError('Invalid username or password');
+    } catch (err) {
+      setError(err.message);
+    } finally {
       setIsLoading(false);
     }
   };
 
   const handleMicrosoftLogin = () => {
-    const backendBaseUrl = 'https://salesforecast-backend-lxjt.onrender.com';
+    const backendBaseUrl = 'http://localhost:8000';
     window.location.href = `${backendBaseUrl}/auth/microsoft/login`;
   };
 

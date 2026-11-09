@@ -1,0 +1,15 @@
+.forecast-comparison>p{color:#60778d;font-size:13px;margin:8px 0 16px}
+.comparison-controls{display:flex;flex-wrap:wrap;gap:18px;margin-bottom:16px}
+.comparison-controls fieldset{display:flex;flex-wrap:wrap;gap:14px;border:1px solid #d9e3eb;border-radius:8px;padding:10px 14px}
+.comparison-controls legend{font-size:12px;color:#4c6680;font-weight:700;padding:0 4px}
+.comparison-controls label{display:flex;align-items:center;gap:6px;font-size:13px;color:#123550}
+.comparison-controls input{accent-color:#082e4e}
+.comparison-plot{overflow-x:auto}
+.comparison-plot svg{display:block;width:100%;min-width:640px;height:auto}
+.comparison-plot text{font:12px sans-serif;fill:#4c6680}
+.comparison-plot .chart-axis-title{font-weight:bold}
+.comparison-plot circle:focus{outline:2px solid #082e4e}
+.comparison-legend{display:flex;flex-wrap:wrap;gap:12px 20px;list-style:none;padding:0;margin:8px 0}
+.comparison-legend li{display:flex;align-items:center;gap:7px;color:#123550;font-size:12px}
+.comparison-legend li span{width:20px;height:3px;display:inline-block}
+.forecast-comparison .comparison-note{font-size:11px;margin-bottom:0}

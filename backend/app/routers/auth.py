@@ -1,6 +1,12 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
 import msal
+import secrets
+import hmac
+import os
+from urllib.parse import urlencode
+from pydantic import BaseModel
+from app.services import state_locks
 from app.config import settings
 
 # Router prefix set to /auth so the full path becomes /auth/callback
@@ -26,15 +32,22 @@ def microsoft_login():
         )
 
     msal_app = _build_msal_app()
+    oauth_state = secrets.token_urlsafe(32)
     auth_url = msal_app.get_authorization_request_url(
         scopes=SCOPES,
+        state=oauth_state,
         redirect_uri=settings.AZURE_MS_AUTH_REDIRECT_URI
     )
-    return RedirectResponse(url=auth_url)
+    response = RedirectResponse(url=auth_url)
+    response.set_cookie('forecast_oauth_state', oauth_state, httponly=True, samesite='lax', max_age=600, secure=settings.FRONTEND_URL.startswith('https://'))
+    return response
 
 @router.get("/callback")
-def microsoft_callback(code: str = Query(None), error: str = Query(None)):
+def microsoft_callback(request: Request, code: str = Query(None), error: str = Query(None), state: str = Query(None)):
     """Handles callback from Microsoft at http://localhost:8000/auth/callback"""
+    expected_state = request.cookies.get('forecast_oauth_state', '')
+    if not state or not expected_state or not hmac.compare_digest(state, expected_state):
+        raise HTTPException(400, 'Sign-in session expired. Please sign in again.')
     if error or not code:
         raise HTTPException(
             status_code=400, 
@@ -60,9 +73,39 @@ def microsoft_callback(code: str = Query(None), error: str = Query(None)):
     # Microsoft Entra ID usually provides email in 'preferred_username' or 'email'
     user_email = user_info.get("preferred_username") or user_info.get("email", "")
 
-    # Redirect user back to React login page with success status, user name, and user email
-    redirect_target = (
-        f"{settings.FRONTEND_URL}/login"
-        f"?login_success=true&user={user_name}&email={user_email}"
-    )
-    return RedirectResponse(url=redirect_target)
+    if not user_email:
+        raise HTTPException(400, 'Your Microsoft account did not provide an email address.')
+    response = RedirectResponse(settings.FRONTEND_URL + '/login?' + urlencode({
+        'login_success': 'true', 'user': user_name, 'email': user_email
+    }))
+    set_session_cookie(response, state_locks.issue_session(user_email))
+    response.delete_cookie('forecast_oauth_state')
+    return response
+
+
+def set_session_cookie(response, token):
+    response.set_cookie(state_locks.COOKIE, token, httponly=True, samesite='lax', max_age=28800,
+                        secure=settings.FRONTEND_URL.startswith('https://'))
+
+class DemoLogin(BaseModel):
+    username: str
+    password: str
+
+@router.post('/demo-login')
+def demo_login(payload: DemoLogin, response: Response):
+    if not hmac.compare_digest(payload.username, 'admin') or not hmac.compare_digest(payload.password, os.environ.get('FORECAST_DEMO_PASSWORD', 'password')):
+        raise HTTPException(401, 'Invalid username or password')
+    email = 'admin@demo.local'
+    set_session_cookie(response, state_locks.issue_session(email))
+    return {'email': email, 'name': 'Admin'}
+
+@router.get('/session')
+def current_session(request: Request):
+    _, email = state_locks.identity(request)
+    return {'email': email}
+
+@router.post('/logout')
+def logout(request: Request, response: Response):
+    state_locks.logout(request)
+    response.delete_cookie(state_locks.COOKIE)
+    return {'signed_out': True}

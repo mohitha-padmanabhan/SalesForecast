@@ -10,6 +10,9 @@ import {
 } from '../../api/forecastApi';
 import './Dashboard.css';
 import ExportMatrixButton from '../../components/ExportMatrixButton';
+import ForecastNumberInput from '../../components/ForecastNumberInput';
+import useStateEditLock from '../../hooks/useStateEditLock';
+import {allocateYearTotal, applyMatrixWorkbook, readImportWorkbook} from '../../utils/importMatrix';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -119,6 +122,7 @@ function Dashboard() {
     brandType: 'All' 
   });
   
+  const stateEdit = useStateEditLock(filters.state);
   const [filterOptions, setFilterOptions] = useState({
     states: [],
     chainStatuses: [],
@@ -170,6 +174,10 @@ function Dashboard() {
   const [matrixExpanded, setMatrixExpanded] = useState(false);
   const matrixDialogRef = useRef(null);
   const matrixTableRef = useRef(null);
+  const importInputRef = useRef(null);
+  const importContextRef = useRef(null);
+  const [importing, setImporting] = useState(false);
+  const [loadedFilters, setLoadedFilters] = useState(null);
   const expandButtonRef = useRef(null);
   const forecastRequestRef = useRef(0);
   const duplicateCheckPending = loadingModalIds || modalIdsKey !== JSON.stringify([newItemForm.brand, newItemForm.state]);
@@ -376,6 +384,7 @@ function Dashboard() {
       return;
     }
 
+    setLoadedFilters(null);
     setLoading(true);
     try {
       const payload = {
@@ -393,6 +402,7 @@ function Dashboard() {
         String(a?.planning_id || '').localeCompare(String(b?.planning_id || ''), undefined, { sensitivity: 'base', numeric: true })
       );
       setGridData(items);
+      setLoadedFilters(filters);
       setLatestLoadTimestamp(resData?.statistics?.latest_load_timestamp || '');
 
       if (items.length > 0) {
@@ -508,46 +518,32 @@ function Dashboard() {
   }, [varianceMode, currentYearTileVariances, rows, currentDynamicYear]);
 
   const changeForecast = (key, value) => {
-    if (!planType) return;
+    if (!planType || !stateEdit.canEdit) return;
     setRows(prev => prev.map(r => r.key === key && r.kind === 'Forecast' ? { ...r, value: Math.max(0, Number(value) || 0) } : r));
     setSaved(false);
   };
 
   const handleYearTotalChange = (year, rawVal) => {
+    if (!stateEdit.canEdit) return;
     setTempTotalInputs(prev => ({ ...prev, [year]: rawVal }));
 
     const newTotal = Math.max(0, Number(rawVal) || 0);
     const originalRows = makeDynamicRows(selectedPlan);
 
-    const yearActuals = rows
-      .filter(r => r.year === year && r.kind === 'Actual')
-      .reduce((s, r) => s + r.value, 0);
-
-    const remainingForForecast = Math.max(0, newTotal - yearActuals);
-    const baselineForecastRows = originalRows.filter(r => r.year === year && r.kind === 'Forecast');
-    const baselineTotal = baselineForecastRows.reduce((s, r) => s + r.value, 0);
-
-    setRows(prev => prev.map(r => {
-      if (r.year === year && r.kind === 'Forecast') {
-        const baseCell = baselineForecastRows.find(b => b.key === r.key);
-        const baseVal = baseCell ? baseCell.value : r.value;
-        const proportion = baselineTotal > 0 
-          ? baseVal / baselineTotal 
-          : 1 / baselineForecastRows.length;
-
-        return { 
-          ...r, 
-          value: Number((remainingForForecast * proportion).toFixed(2)) 
-        };
-      }
-      return r;
-    }));
+    setRows(prev => allocateYearTotal(prev, originalRows, year, newTotal));
 
     if (year === currentDynamicYear) {
       setAnnualTarget(newTotal);
     }
     setSaved(false);
   };
+
+  useEffect(() => {
+    if (planType && !stateEdit.canEdit) setPlanType(null);
+  }, [planType, stateEdit.canEdit]);
+  useEffect(() => {
+    if (!planType && !isModalOpen) stateEdit.release();
+  }, [planType, isModalOpen]);
 
   const isLatestDateVersion = Boolean(latestDateVersion) && filters.dateVersion === latestDateVersion;
 
@@ -559,6 +555,7 @@ function Dashboard() {
   }, [isLatestDateVersion, planType]);
 
   const clearAllFilters = () => {
+    stateEdit.release();
     setFilters({
       state: 'All',
       chainStatus: 'All',
@@ -577,7 +574,8 @@ function Dashboard() {
     setSaved(false);
   };
 
-  const switchPlanType = (type) => {
+  const switchPlanType = async (type) => {
+    if (!await stateEdit.ensureEdit()) return;
     setPlanType(type);
     if (selectedPlan) {
       setRows(makeDynamicRows(selectedPlan));
@@ -587,6 +585,7 @@ function Dashboard() {
   };
 
   const resetView = () => {
+    stateEdit.release();
     if (selectedPlan) {
       setRows(makeDynamicRows(selectedPlan));
       setAnnualTarget(selectedPlan.annualTarget || 0);
@@ -596,7 +595,7 @@ function Dashboard() {
   };
 
   const submitPlan = async () => {
-    if (!planType || !selectedPlan || forecastSubmitting) return;
+    if (!planType || !stateEdit.canEdit || !selectedPlan || forecastSubmitting || importing || loadedFilters !== filters || !isLatestDateVersion) return;
     setForecastSubmitting(true);
 
     const userEmail = localStorage.getItem('user_email') || 
@@ -759,7 +758,7 @@ function Dashboard() {
     'Values': planType ? 'Displayed values including unsaved edits' : 'Displayed values',
     'Units': '9L cases; variance percentage rows are percentages'
   };
-  const exportMatrixButton = <ExportMatrixButton tableRef={matrixTableRef} title="Monthly Forecast Matrix" filename={`Forecast_${selectedId || 'Matrix'}`} metadata={exportMetadata} disabled={loading || initialLoading || forecastSubmitting || !rows.length || !tableFilters.years.length} />;
+  const exportMatrixButton = <ExportMatrixButton tableRef={matrixTableRef} title="Monthly Forecast Matrix" filename={`Forecast_${selectedId || 'Matrix'}`} metadata={exportMetadata} disabled={loadedFilters !== filters || loading || initialLoading || forecastSubmitting || importing || !rows.length || !tableFilters.years.length} />;
 
   const handleOpenModal = () => {
     setModalIdsKey('');
@@ -796,10 +795,12 @@ function Dashboard() {
       return;
     }
 
+    if (!await stateEdit.ensureEdit()) return;
     setSubmittingModal(true);
     try {
       await createNewPlanningItem({
         ...newItemForm,
+        editScope: filters.state,
         dateVersion: filters.dateVersion || latestDateVersion
       });
       alert(`Successfully created demand plan ID: ${newItemForm.demandPlanId}`);
@@ -820,6 +821,54 @@ function Dashboard() {
 
   const visibleYears = dynamicYears.filter(year => tableFilters.years.includes(year));
 
+  const canImport = isLatestDateVersion && loadedFilters === filters && !loading && !initialLoading
+    && !forecastSubmitting && Boolean(selectedPlan) && rows.some(row => row.kind === 'Forecast');
+  useEffect(() => {
+    importContextRef.current = {rows, filters, selectedPlan, canImport, tableFilters, planType};
+    return () => { importContextRef.current = null; };
+  }, [rows, filters, selectedPlan, canImport, tableFilters, planType]);
+
+  const importForecast = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !canImport || importing) return;
+    const context = importContextRef.current;
+    setImporting(true);
+    try {
+      const workbook = await readImportWorkbook(file);
+      if (context !== importContextRef.current) {
+        throw new Error('The dashboard selection or values changed while reading the workbook. Please import again.');
+      }
+      const result = applyMatrixWorkbook(workbook, exportMetadata, rows, makeDynamicRows(selectedPlan), visibleYears);
+      if (result.changedMonths) {
+        if (!await stateEdit.ensureEdit()) return;
+        if (context !== importContextRef.current) throw new Error('The dashboard changed. Please import again.');
+        setRows(result.nextRows);
+        setPlanType('month');
+        setTempTotalInputs({});
+        setSaved(false);
+      }
+      const changes = result.changedMonths
+        ? `${result.changedMonths} forecast month(s) updated in edit mode. Review the matrix, then click Submit Forecast to save.`
+        : 'No forecast values changed.';
+      const ignored = result.ignoredActuals ? `\n${result.ignoredActuals} Actuals edit(s) ignored.` : '';
+      const allocated = result.totalYears ? `\nWeightage applied to ${result.totalYears} edited annual total(s).` : '';
+      alert(changes + ignored + allocated);
+    } catch (error) {
+      alert(`Import failed. ${error.message}`);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const importMatrixButton = (
+    <button type="button" className="matrix-export-button" disabled={!canImport || importing}
+      title={isLatestDateVersion ? 'Import an edited Dashboard workbook' : 'Select the latest Date Version to import'}
+      onClick={() => importInputRef.current?.click()}>
+      {importing ? 'Importing…' : 'Import Excel'}
+    </button>
+  );
+
   const isRowVisible = (rowKind, rowType) => {
     const selectedCombos = tableFilters.dataCombinations;
     if (selectedCombos.length === 0) return false;
@@ -835,6 +884,7 @@ function Dashboard() {
 
   return (
     <main className="forecast-dashboard" style={{ position: 'relative' }}>
+      <input ref={importInputRef} type="file" accept=".xlsx" hidden onChange={importForecast} />
       {forecastSubmitting && <div className="page-loading-overlay" role="status" aria-live="polite"><div className="page-loading-content"><div className="page-loading-spinner"/><strong>Submitting Forecast...</strong><span>Please wait while your forecast is being saved.</span></div></div>}
       
       {initialLoading && (
@@ -869,6 +919,7 @@ function Dashboard() {
         </div>
       </header>
 
+      {stateEdit.message && <div role="status" className="summary-error">{stateEdit.message}</div>}
       <section className="filter-card">
         <div className="filter-title">
           <span>Filters</span>
@@ -1068,13 +1119,14 @@ function Dashboard() {
                 <span><i className="dot budget"></i>Budget</span>
               </div>
             {exportMatrixButton}
+            {importMatrixButton}
             <button type="button" className="matrix-expand-button" ref={expandButtonRef} onClick={() => setMatrixExpanded(true)} title="Expand forecast matrix" aria-label="Expand forecast matrix">⛶</button>
             </div>
 
 
             <div className={matrixExpanded ? 'matrix-dialog-overlay' : ''}>
             <div ref={matrixDialogRef} className={matrixExpanded ? 'matrix-dialog' : ''} role={matrixExpanded ? 'dialog' : undefined} aria-modal={matrixExpanded ? true : undefined} aria-label={matrixExpanded ? 'Expanded monthly forecast matrix' : undefined}>
-            {matrixExpanded && <header className="matrix-dialog-header"><div><strong>{selectedId} — Monthly Forecast</strong><p>All 12 months · Changes use the same forecast inputs</p></div><div className="matrix-dialog-actions">{exportMatrixButton}<button type="button" onClick={() => setMatrixExpanded(false)} aria-label="Close expanded matrix">Close ×</button></div></header>}
+            {matrixExpanded && <header className="matrix-dialog-header"><div><strong>{selectedId} — Monthly Forecast</strong><p>All 12 months · Changes use the same forecast inputs</p></div><div className="matrix-dialog-actions">{exportMatrixButton}{importMatrixButton}<button type="button" onClick={() => setMatrixExpanded(false)} aria-label="Close expanded matrix">Close ×</button></div></header>}
             <div className="forecast-matrix-wrap">
               <table className="forecast-matrix" ref={matrixTableRef}>
                 <thead>
@@ -1088,7 +1140,7 @@ function Dashboard() {
                   {visibleYears.map(year => {
                     const yearRows = rows.filter(r => r.year === year);
                     
-                    const isEditableYear = planType === 'year' && year >= currentDynamicYear;
+                    const isEditableYear = planType === 'year' && stateEdit.canEdit && year >= currentDynamicYear;
                     const prevForecastRows = yearRows.filter(r => r.previouslyForecasted !== null);
                     const prevTotal = prevForecastRows.reduce((s, r) => s + (r.previouslyForecasted || 0), 0);
 
@@ -1145,8 +1197,8 @@ function Dashboard() {
                               return (
                                 <td key={`${year}-${month}`} className={row.kind === 'Actual' ? 'actual-cell' : 'forecast-cell'}>
                                   <span className={`cell-tag ${row.kind.toLowerCase()}`}>{row.kind === 'Actual' ? 'Actuals' : 'Forecast'}</span>
-                                  {row.kind === 'Forecast' && planType === 'month' ?
-                                    <input aria-label={`${month} ${year} Forecast`} type="number" step="0.01" min="0" value={row.value} onChange={e => changeForecast(row.key, e.target.value)} />
+                                  {row.kind === 'Forecast' && planType === 'month' && stateEdit.canEdit ?
+                                    <ForecastNumberInput label={`${month} ${year} Forecast`} value={row.value} onChange={value => changeForecast(row.key, value)} />
                                     : <strong>{formatDisplayNumber(row.value)}</strong>}
                                 </td>
                               );
@@ -1329,7 +1381,7 @@ function Dashboard() {
               <div className="save-note">{saved ? '✓ Submitted successfully to backend.' : planType ? 'Editing active. Submit when finished.' : 'View Mode.'}</div>
               <div className="actions">
                 <button className="secondary" onClick={resetView}>Reset / View Mode</button>
-                <button className="primary" disabled={!planType || forecastSubmitting} onClick={submitPlan}>Submit Forecast</button>
+                <button className="primary" disabled={!planType || !stateEdit.canEdit || forecastSubmitting || importing || loadedFilters !== filters || !isLatestDateVersion} onClick={submitPlan}>Submit Forecast</button>
               </div>
             </footer>
           </section>

@@ -1,13 +1,48 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'https://salesforecast-backend-lxjt.onrender.com/api/v1';
+const API_BASE_URL =  import.meta.env.VITE_API_BASE_URL ||
+                      'http://localhost:8000/api/v1';
+
+const AUTH_BASE_URL = API_BASE_URL.replace(/\/api\/v1\/?$/, '');
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
 });
+
+let editLease = '';
+export function setEditLease(lease) { editLease = lease; }
+apiClient.interceptors.request.use(config => {
+  if (editLease && !config.headers['X-Planning-Lease']) config.headers['X-Planning-Lease'] = editLease;
+  return config;
+});
+export const fetchStateEditStatus = async state => (await apiClient.get('/state-locks/', {params: {state}})).data;
+export const acquireStateEdit = async (state, lease) => (await apiClient.post('/state-locks/acquire', {state}, {headers: {'X-Planning-Lease': lease}})).data;
+export const releaseStateEdit = (state, lease, keepalive = false) => fetch(`${API_BASE_URL}/state-locks/release`, {
+  method: 'POST', credentials: 'include', keepalive,
+  headers: {'Content-Type': 'application/json', 'X-Planning-Lease': lease},
+  body: JSON.stringify({state})
+});
+export async function verifySession() {
+  const response = await fetch('`${AUTH_BASE_URL}/auth/session', {credentials: 'include'});
+  if (!response.ok) throw new Error('Please sign in again to edit forecasts.');
+  return response.json();
+}
+export async function demoLogin(username, password) {
+  const response = await fetch('`${AUTH_BASE_URL}/auth/demo-login', {
+    method: 'POST', credentials: 'include', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username, password})
+  });
+  if (!response.ok) throw new Error('Invalid username or password');
+  return response.json();
+}
+export async function endSession() {
+  const response = await fetch('`${AUTH_BASE_URL}/auth/logout', {method: 'POST', credentials: 'include'});
+  if (!response.ok) throw new Error('Sign out could not complete. Please try again.');
+  clearForecastCache();
+}
 
 // Memory-only cache: bounded, shared across pages, never persisted in browser storage.
 const responses = new Map();
@@ -107,7 +142,9 @@ export const fetchExistingDemandPlanIds = async (modalFilters = {}) => {
 export async function createNewPlanningItem(payload) {
   const response = await fetch(`${API_BASE_URL}/forecast/add-item`, {
     method: 'POST',
+    credentials: 'include',
     headers: {
+      'X-Planning-Lease': editLease,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -117,6 +154,7 @@ export async function createNewPlanningItem(payload) {
       template_choice: payload.templateChoice,
       existing_demand_plan_id: payload.existingDemandPlanId || null,
       date_version: payload.dateVersion,
+      edit_scope: payload.editScope,
     }),
   });
 

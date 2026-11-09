@@ -69,6 +69,11 @@ export async function buildMatrixWorkbook(snapshot, {title, metadata = {}}) {
       if (rowIndex % 2 === 0 || index === values.length - 1) cell.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: 'FFEAF2F8'}};
     });
   });
+  if (metadata['Planning ID']) {
+    // Keep the original displayed cells so unchanged rounded values are not imported as edits.
+    const baseline = workbook.addWorksheet('Export Baseline', {state: 'veryHidden'});
+    snapshot.rows.forEach(row => baseline.addRow(row.map(cell => cell.value)));
+  }
   sheet.views = [{state: 'frozen', xSplit: 1, ySplit: header.number, showGridLines: false}];
   sheet.pageSetup = {orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: `${header.number}:${header.number}`};
   return workbook;

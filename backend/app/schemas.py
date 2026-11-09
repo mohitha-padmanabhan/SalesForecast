@@ -116,6 +116,7 @@ class ItemMasterSchema(BaseModel):
     bc_itemStatus: Optional[str] = Field(None, alias="bc_itemStatus")
     
 class AddNewItemPayload(BaseModel):
+    edit_scope: Optional[str] = None
     demand_plan_id: str
     state: str
     brand: str

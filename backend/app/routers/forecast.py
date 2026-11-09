@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Query
+from fastapi import APIRouter, HTTPException, status, Query, Request
 from fastapi.encoders import jsonable_encoder
 from typing import List
 from app.schemas import ItemMasterSchema,AddNewItemPayload
@@ -6,7 +6,9 @@ from app.services.forecast_engine import fetch_item_master_data, create_new_plan
 from app.schemas import FilterParams, SubmitPayload
 from app.services.forecast_engine import run_sql_query_fast, process_and_submit_adjustments
 
-router = APIRouter(prefix="/forecast", tags=["Forecast Engine"])
+from app.services.state_locks import edit_guard
+
+router = APIRouter(prefix="/api/v1/forecast", tags=["Forecast Engine"])
 
 @router.post("/query-base")
 def query_base_forecast(filters: FilterParams):
@@ -43,15 +45,18 @@ def set_plan_mode(mode: str):
         )
 
 @router.post("/submit")
-def submit_forecast_changes(payload: SubmitPayload):
+def submit_forecast_changes(payload: SubmitPayload, request: Request):
     """Submits updates to 24mo forecast, locks approved values, and logs change history."""
     try:
-        result = process_and_submit_adjustments(payload)
+        with edit_guard(request, payload.selected_state):
+            result = process_and_submit_adjustments(payload)
         return {
             "status": "success",
             "message": f"Updated {result['updated_fcst_rows']} forecast records, locked output, and logged {result['uploaded_chglog_rows']} audit changes.",
             "details": result
         }
+    except HTTPException:
+        raise
     except ValueError as ve:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
     except Exception as e:
@@ -80,15 +85,21 @@ def get_existing_ids(brand: str = Query("All"), state: str = Query("All")):
         raise HTTPException(status_code=500, detail="Failed to check existing planning items.") from exc
 
 @router.post("/add-item")
-def add_new_planning_item(payload: AddNewItemPayload):
+def add_new_planning_item(payload: AddNewItemPayload, request: Request):
     """Creates a new planning item template in sf.fcstState24mo_locked."""
     try:
-        result = create_new_planning_item(payload)
+        scope = payload.edit_scope if payload.edit_scope is not None else payload.state
+        if scope != 'All' and scope.strip().upper() != payload.state.strip().upper():
+            raise HTTPException(400, 'Select the target state on the Dashboard before creating an item.')
+        with edit_guard(request, scope):
+            result = create_new_planning_item(payload)
         return {
             "status": "success",
             "message": f"Successfully created item '{payload.demand_plan_id}' with {result['inserted_rows']} records.",
             "details": result
         }
+    except HTTPException:
+        raise
     except ValueError as ve:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
     except Exception as e:

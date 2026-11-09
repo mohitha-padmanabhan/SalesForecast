@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import './Navbar.css';
-import { clearForecastCache } from '../api/forecastApi';
+import { clearForecastCache, endSession } from '../api/forecastApi';
 
 function Navbar() {
   const navigate = useNavigate();
@@ -9,7 +9,8 @@ function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try { await endSession(); } catch (error) { alert(error.message); return; }
     clearForecastCache();
     localStorage.removeItem('isLoggedIn');
     navigate('/login');
