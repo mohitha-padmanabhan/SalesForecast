@@ -51,12 +51,21 @@ def microsoft_login():
 
     return response
 
+
 @router.get("/callback")
-def microsoft_callback(request: Request, code: str = Query(None), error: str = Query(None), state: str = Query(None)):
-    """Handles callback from Microsoft at http://localhost:8000/auth/callback"""
+def microsoft_callback(
+    request: Request,
+    code: str = Query(None),
+    error: str = Query(None),
+    state: str = Query(None)
+):
+    """Handles callback from Microsoft."""
+
     expected_state = request.cookies.get('forecast_oauth_state', '')
+
     if not state or not expected_state or not hmac.compare_digest(state, expected_state):
         raise HTTPException(400, 'Sign-in session expired. Please sign in again.')
+
     if error or not code:
         raise HTTPException(
             status_code=400,
@@ -64,6 +73,7 @@ def microsoft_callback(request: Request, code: str = Query(None), error: str = Q
         )
 
     msal_app = _build_msal_app()
+
     result = msal_app.acquire_token_by_authorization_code(
         code,
         scopes=SCOPES,
@@ -76,18 +86,31 @@ def microsoft_callback(request: Request, code: str = Query(None), error: str = Q
             detail=result.get("error_description", "Failed to acquire token from Microsoft.")
         )
 
-    # Extract user information from ID token claims
     user_info = result.get("id_token_claims", {})
     user_name = user_info.get("name", "User")
-    # Microsoft Entra ID usually provides email in 'preferred_username' or 'email'
     user_email = user_info.get("preferred_username") or user_info.get("email", "")
 
     if not user_email:
         raise HTTPException(400, 'Your Microsoft account did not provide an email address.')
-    response = RedirectResponse(settings.FRONTEND_URL + '/login?' + urlencode({
-        'login_success': 'true', 'user': user_name, 'email': user_email
-    }))
-    
+
+    response = RedirectResponse(
+        settings.FRONTEND_URL + '/login?' + urlencode({
+            'login_success': 'true',
+            'user': user_name,
+            'email': user_email
+        })
+    )
+
+    set_session_cookie(response, state_locks.issue_session(user_email))
+
+    response.delete_cookie(
+        key='forecast_oauth_state',
+        path='/'
+    )
+
+    return response
+
+
 def set_session_cookie(response, token):
     response.set_cookie(
         key=state_locks.COOKIE,
@@ -98,31 +121,9 @@ def set_session_cookie(response, token):
         secure=True,
         path='/'
     )
-
-    response.delete_cookie(
-        key='forecast_oauth_state',
-        path='/'
-    )
-    return response
-
-
-
-def set_session_cookie(response, token):
-    response.set_cookie(
-        key=state_locks.COOKIE,
-        value=token,
-        httponly=True,
-        samesite='lax',
-        max_age=28800,
-        secure=True,
-        path='/'
-    )
-
-
 class DemoLogin(BaseModel):
     username: str
     password: str
-
 @router.post('/demo-login')
 def demo_login(payload: DemoLogin, response: Response):
     if not hmac.compare_digest(payload.username, 'admin') or not hmac.compare_digest(payload.password, os.environ.get('FORECAST_DEMO_PASSWORD', 'password')):
