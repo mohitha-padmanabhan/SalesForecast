@@ -87,7 +87,18 @@ def microsoft_callback(request: Request, code: str = Query(None), error: str = Q
     response = RedirectResponse(settings.FRONTEND_URL + '/login?' + urlencode({
         'login_success': 'true', 'user': user_name, 'email': user_email
     }))
-    set_session_cookie(response, state_locks.issue_session(user_email))
+    
+def set_session_cookie(response, token):
+    response.set_cookie(
+        key=state_locks.COOKIE,
+        value=token,
+        httponly=True,
+        samesite='none',
+        max_age=28800,
+        secure=True,
+        path='/'
+    )
+
     response.delete_cookie(
         key='forecast_oauth_state',
         path='/'
@@ -128,5 +139,8 @@ def current_session(request: Request):
 @router.post('/logout')
 def logout(request: Request, response: Response):
     state_locks.logout(request)
-    response.delete_cookie(state_locks.COOKIE)
+    response.delete_cookie(
+        key=state_locks.COOKIE,
+        path='/'
+    )
     return {'signed_out': True}
