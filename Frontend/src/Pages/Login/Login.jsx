@@ -1,19 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import './Login.css';
-import {
-  demoLogin,
-  verifySession,
-  clearForecastCache,
-  AUTH_BASE_URL,
-} from '../../api/forecastApi';
+import {demoLogin, verifySession, clearForecastCache} from '../../api/forecastApi';
+
 function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-
+  
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -52,7 +48,7 @@ function Login() {
   };
 
   const handleMicrosoftLogin = () => {
-    const backendBaseUrl = AUTH_BASE_URL;
+    const backendBaseUrl = 'http://localhost:8000';
     window.location.href = `${backendBaseUrl}/auth/microsoft/login`;
   };
 
