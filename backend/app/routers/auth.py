@@ -39,7 +39,16 @@ def microsoft_login():
         redirect_uri=settings.AZURE_MS_AUTH_REDIRECT_URI
     )
     response = RedirectResponse(url=auth_url)
-    response.set_cookie('forecast_oauth_state', oauth_state, httponly=True, samesite='lax', max_age=600, secure=settings.FRONTEND_URL.startswith('https://'))
+    response.set_cookie(
+        key='forecast_oauth_state',
+        value=oauth_state,
+        httponly=True,
+        samesite='lax',
+        max_age=600,
+        secure=True,
+        path='/'
+    )
+
     return response
 
 @router.get("/callback")
@@ -79,13 +88,25 @@ def microsoft_callback(request: Request, code: str = Query(None), error: str = Q
         'login_success': 'true', 'user': user_name, 'email': user_email
     }))
     set_session_cookie(response, state_locks.issue_session(user_email))
-    response.delete_cookie('forecast_oauth_state')
+    response.delete_cookie(
+        key='forecast_oauth_state',
+        path='/'
+    )
     return response
 
 
+
 def set_session_cookie(response, token):
-    response.set_cookie(state_locks.COOKIE, token, httponly=True, samesite='lax', max_age=28800,
-                        secure=settings.FRONTEND_URL.startswith('https://'))
+    response.set_cookie(
+        key=state_locks.COOKIE,
+        value=token,
+        httponly=True,
+        samesite='lax',
+        max_age=28800,
+        secure=True,
+        path='/'
+    )
+
 
 class DemoLogin(BaseModel):
     username: str
