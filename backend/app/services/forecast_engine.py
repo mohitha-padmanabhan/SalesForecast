@@ -27,9 +27,9 @@ if not logger.handlers:
 class SubmitPayload(BaseModel):
     selected_state: Optional[str] = Field(None, alias="state")
     plan_type: Optional[str] = Field(None, alias="planType")
-    
+
     # Handle both snake_case and camelCase field names from UI
-    chain_status: Optional[str] = Field(None, validation_alias="chain_status") 
+    chain_status: Optional[str] = Field(None, validation_alias="chain_status")
     premise_type: Optional[str] = Field(None, validation_alias="premise_type")
     brand: Optional[str] = Field(None, validation_alias="brand")
     top_chain: Optional[str] = Field(None, validation_alias="top_chain")
@@ -41,36 +41,43 @@ class SubmitPayload(BaseModel):
         populate_by_name = True
 
 def fetch_item_master_data(brand: Optional[str] = None):
-    brand_filter = ""
-    if brand and str(brand).strip() and str(brand).strip().lower() != "all":
-        escaped_brand = str(brand).strip().replace("'", "''")
-        brand_filter = f"WHERE RTRIM(LTRIM([bc_brandGroup])) = '{escaped_brand}'"
-
-    query = f"""
-        SELECT DISTINCT
-            [demand_plan_id]
-        FROM [{settings.FABRIC_SCHEMA}].[{settings.TABLE_ITEM_MASTER}]
-        {brand_filter}
+    clauses = ["[demandPlanID] IS NOT NULL", "RTRIM(LTRIM([demandPlanID])) <> ''"]
+    params = []
+    if brand and brand.strip().lower() != 'all':
+        clauses.append("RTRIM(LTRIM([brandName])) = ?")
+        params.append(brand.strip())
+    df = execute_query(f"""
+        SELECT DISTINCT RTRIM(LTRIM([demandPlanID])) AS [demand_plan_id]
+        FROM [{settings.FABRIC_SCHEMA}].[{settings.TABLE_DEMAND_ID_MASTER}]
+        WHERE {' AND '.join(clauses)}
         ORDER BY [demand_plan_id]
-    """
-    df = execute_query(query)
-    df = df.fillna("")  # Ensures safe JSON serialization
-    return df.to_dict(orient="records")
+    """, tuple(params))
+    return df.fillna('').to_dict(orient='records')
 
-def fetch_existing_planning_ids(brand: str = "All", state: str = "All") -> List[str]:
+
+def creation_filter_sql(brand='All', state='All', chain_status='All', premise_type='All', top_chain='All', date_version=None):
     clauses, params = [], []
-    for column, value in (("Brand", brand), ("State", state)):
-        if value and value != "All":
+    for column, value in [('Brand', brand), ('State', state), ('Chain Status', chain_status),
+                          ('Premise Type', premise_type), ('Top Chain', top_chain)]:
+        if value and value.strip().lower() != 'all':
             clauses.append(f"RTRIM(LTRIM([{column}])) = ?")
             params.append(value.strip())
-    where = " AND ".join(clauses) or "1=1"
+    if date_version:
+        clauses.append("CAST([DateVersion] AS DATE) = CAST(? AS DATE)")
+        params.append(date_version)
+    return ' AND '.join(clauses) or '1=1', tuple(params)
+
+
+def fetch_existing_planning_ids(brand='All', state='All', chain_status='All', premise_type='All', top_chain='All', date_version=None) -> List[str]:
+    where, params = creation_filter_sql(brand, state, chain_status, premise_type, top_chain, date_version)
     df = execute_query(f"""
         SELECT DISTINCT RTRIM(LTRIM([PlanningID])) AS [planning_id]
         FROM [{settings.FABRIC_SCHEMA}].[{settings.TABLE_FCST_24MO_LOCKED}]
         WHERE {where} AND [PlanningID] IS NOT NULL
         ORDER BY [planning_id]
-    """, tuple(params))
-    return [str(value) for value in df["planning_id"].tolist() if str(value).strip()]
+    """, params)
+    return [str(value) for value in df['planning_id'].tolist() if str(value).strip()]
+
 
 def sanitize_float(val: Any) -> float:
     if val is None or pd.isna(val):
@@ -111,6 +118,7 @@ def run_sql_query_fast(filters: FilterParams) -> Dict[str, Any]:
     prem_cond = build_where_clause("[Premise Type]", filters.premise_type)
     brand_cond = build_where_clause("[Brand]", filters.brand)
     top_chain_cond = build_where_clause("[Top Chain]", filters.top_chain)
+    depletion_top_chain_cond = build_where_clause("[TopChain]", filters.top_chain)
 
     logger.info(
         f"Generated SQL Conditions: {state_cond} | {chain_cond} | "
@@ -136,13 +144,14 @@ def run_sql_query_fast(filters: FilterParams) -> Dict[str, Any]:
     next_year = selected_year + 1
 
     # Filters use columns that are part of the logical-row partition, so applying
-    # them before ROW_NUMBER is equivalent but avoids ranking unrelated records.
+    # them before ranking avoids processing unrelated records.
+    # Keep every row tied at the latest timestamp within each logical combination.
     fcst_query = f"""
         WITH LatestLogicalRows AS (
             SELECT
                 [PlanningID], [State], [Chain Status], [Premise Type], [Brand],
                 [Top Chain], [Date], [DateVersion], [ForecastQty_9L], [LoadTimestamp],
-                ROW_NUMBER() OVER (
+                DENSE_RANK() OVER (
                     PARTITION BY RTRIM(LTRIM([PlanningID])),
                                  ISNULL([State], ''),
                                  ISNULL([Chain Status], ''),
@@ -178,7 +187,7 @@ def run_sql_query_fast(filters: FilterParams) -> Dict[str, Any]:
                 [DateVersion] AS [DateVersion],
                 SUM([ForecastQty_9L]) AS [Prev_ForecastQty_9L]
             FROM [{settings.FABRIC_SCHEMA}].[{settings.TABLE_FCST_24MO}]
-            WHERE YEAR(CAST([Date] AS DATE)) = {selected_year}
+            WHERE YEAR(CAST([Date] AS DATE)) IN ({selected_year}, {next_year})
               AND {state_cond} AND {chain_cond} AND {prem_cond}
               AND {brand_cond} AND {top_chain_cond}
             GROUP BY
@@ -250,6 +259,7 @@ def run_sql_query_fast(filters: FilterParams) -> Dict[str, Any]:
         FROM [{settings.FABRIC_SCHEMA}].[{settings.TABLE_DEPLETION}]
         WHERE {id_filter_clause}
           AND {state_cond} AND {chain_cond} AND {prem_cond} AND {brand_cond}
+          AND {depletion_top_chain_cond}
           AND (
             ([Year] = {prev_year_1}) OR
             ([Year] = {prev_year_2}) OR
@@ -271,7 +281,11 @@ def run_sql_query_fast(filters: FilterParams) -> Dict[str, Any]:
           AND {prem_cond}
           AND {brand_cond}
           AND {top_chain_cond}
-          AND (YEAR(CAST([Date] AS DATE)) IN ({selected_year}, {next_year}))
+          AND (YEAR(CAST([Date] AS DATE)) IN ({prev_year_1}, {prev_year_2}, {selected_year}, {next_year}))
+          AND (
+            YEAR(CAST([Date] AS DATE)) <> {next_year}
+            OR TRY_CAST([Year] AS INT) = {next_year}
+          )
         GROUP BY RTRIM(LTRIM([Planning ID])), CAST([Date] AS DATE)
     """
 
@@ -314,7 +328,7 @@ def run_sql_query_fast(filters: FilterParams) -> Dict[str, Any]:
     if not df_load_ts.empty and 'LatestLoadTimestamp' in df_load_ts.columns:
         ts_val = df_load_ts.iloc[0]['LatestLoadTimestamp']
         if pd.notna(ts_val):
-            latest_load_timestamp = pd.to_datetime(ts_val).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            latest_load_timestamp = pd.to_datetime(ts_val).strftime("%Y-%m-%d %H:%M:%S.%f")
 
     grid_data = []
     for p_id in planning_ids:
@@ -331,6 +345,7 @@ def run_sql_query_fast(filters: FilterParams) -> Dict[str, Any]:
         ]
         prev_forecasts_2026 = [prev_fcst_map.get((p_id, selected_year, m), 0.0) for m in range(1, 13)]
         forecasts_2027 = [fcst_map.get((p_id, next_year, m), 0.0) for m in range(1, 13)]
+        prev_forecasts_2027 = [prev_fcst_map.get((p_id, next_year, m), 0.0) for m in range(1, 13)]
 
         budget_2026 = [budget_map.get((p_id, selected_year, m), 0.0) for m in range(1, 13)]
         budget_2027 = [budget_map.get((p_id, next_year, m), 0.0) for m in range(1, 13)]
@@ -348,7 +363,10 @@ def run_sql_query_fast(filters: FilterParams) -> Dict[str, Any]:
             "actuals2026": actuals_2026,
             "forecasts2026": forecasts_2026,
             "prevForecasts2026": prev_forecasts_2026,
+            "prevForecasts2027": prev_forecasts_2027,
             "forecasts2027": forecasts_2027,
+            f"budget{prev_year_1}": [budget_map.get((p_id, prev_year_1, m), 0.0) for m in range(1, 13)],
+            f"budget{prev_year_2}": [budget_map.get((p_id, prev_year_2, m), 0.0) for m in range(1, 13)],
             f"budget{selected_year}": budget_2026,
             f"budget{next_year}": budget_2027
         })
@@ -394,7 +412,7 @@ def process_and_submit_adjustments(payload: SubmitPayload) -> Dict[str, int]:
         if item_version != current_date_version:
             raise ValueError("All submitted forecast rows must use the selected DateVersion.")
 
-    current_load_timestamp = now.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    current_load_timestamp = now.strftime("%Y-%m-%d %H:%M:%S.%f")
     detailed_fcst_updates = []
     unmodified_subdimension_updates = []
 
@@ -494,12 +512,14 @@ def process_and_submit_adjustments(payload: SubmitPayload) -> Dict[str, int]:
         escaped_dates = "', '".join(d.replace("'", "''") for d in sorted(updated_dates))
         date_where = f"CAST([Date] AS DATE) IN ('{escaped_dates}')" if escaped_dates else "1=0"
 
+    # Match the display query: preserve all latest-timestamp rows for allocation
+    # and carry-forward so submitting cannot discard tied source quantities.
     baseline_query = f"""
         WITH LatestLogicalRows AS (
             SELECT
                 [PlanningID], [State], [Chain Status], [Premise Type], [Brand], [Top Chain],
                 [Date], [DateVersion], [ForecastQty_9L], [LoadTimestamp],
-                ROW_NUMBER() OVER (
+                DENSE_RANK() OVER (
                     PARTITION BY RTRIM(LTRIM([PlanningID])),
                                  ISNULL([State], ''),
                                  ISNULL([Chain Status], ''),
@@ -669,19 +689,19 @@ def process_and_submit_adjustments(payload: SubmitPayload) -> Dict[str, int]:
         )
         SELECT
             [PlanningID], [State], [ChainStatus], CAST([Date] AS DATE),
-            [ForecastQty_9L], [DateVersion], [PremiseType], [Brand], [TopChain], CAST([LoadTimestamp] AS DATETIME2(3))
+            [ForecastQty_9L], [DateVersion], [PremiseType], [Brand], [TopChain], CAST([LoadTimestamp] AS DATETIME2(6))
         FROM OPENJSON(?)
         WITH (
-            [PlanningID] NVARCHAR(255) '$.PlanningID',
-            [State] NVARCHAR(100) '$.State',
-            [ChainStatus] NVARCHAR(100) '$.ChainStatus',
-            [Date] VARCHAR(50) '$.Date',
-            [ForecastQty_9L] FLOAT '$.ForecastQty_9L',
-            [DateVersion] VARCHAR(50) '$.DateVersion',
-            [PremiseType] NVARCHAR(100) '$.PremiseType',
-            [Brand] NVARCHAR(255) '$.Brand',
-            [TopChain] NVARCHAR(255) '$.TopChain',
-            [LoadTimestamp] VARCHAR(30) '$.LoadTimestamp'
+            [PlanningID] VARCHAR(8000) '$.PlanningID',
+            [State] VARCHAR(8000) '$.State',
+            [ChainStatus] VARCHAR(8000) '$.ChainStatus',
+            [Date] DATE '$.Date',
+            [ForecastQty_9L] DECIMAL(18,6) '$.ForecastQty_9L',
+            [DateVersion] VARCHAR(8000) '$.DateVersion',
+            [PremiseType] VARCHAR(100) '$.PremiseType',
+            [Brand] VARCHAR(50) '$.Brand',
+            [TopChain] VARCHAR(8000) '$.TopChain',
+            [LoadTimestamp] DATETIME2(6) '$.LoadTimestamp'
         )
     """
     execute_non_query_utf8_safe(insert_locked_sql, json_locked)
@@ -743,139 +763,110 @@ def process_and_submit_adjustments(payload: SubmitPayload) -> Dict[str, int]:
         "load_timestamp": current_load_timestamp
     }
 
-#new item creation logic
-def create_new_planning_item(payload: AddNewItemPayload) -> Dict[str, Any]:
-    new_pid = payload.demand_plan_id.replace("'", "''").strip()
-    st = payload.state.replace("'", "''").strip()
-    br = payload.brand.replace("'", "''").strip()
-    # Fresh server-side validation also blocks stale clients and direct submissions.
-    existing = fetch_existing_planning_ids(payload.brand, payload.state)
-    if payload.demand_plan_id.strip().casefold() in {pid.strip().casefold() for pid in existing}:
-        raise ValueError("The item already exists for the selected brand and state filters.")
-    now = datetime.now()
-    selected_version_text = str(payload.date_version or "").strip()
-    if not selected_version_text or selected_version_text.lower() in {"all", "latest"}:
-        raise ValueError("A concrete selected DateVersion is required when creating a planning item.")
+def prepare_new_planning_rows(payload: AddNewItemPayload):
+    version = str(payload.date_version or '').strip()
+    if not version or version.lower() in {'all', 'latest'}:
+        raise ValueError('A concrete Dashboard DateVersion is required.')
     try:
-        selected_date_version = pd.to_datetime(selected_version_text).strftime("%Y-%m-%d")
+        version = pd.to_datetime(version).strftime('%Y-%m-%d')
     except Exception as exc:
-        raise ValueError(f"Invalid selected DateVersion: {selected_version_text}") from exc
-    selected_version_sql = selected_date_version.replace("'", "''")
-    load_timestamp = now.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-
-    if payload.template_choice == "new":
-        # Pull distinct combinations for state and brand under latest DateVersion
-        query = f"""
-            WITH LatestLogicalRows AS (
-                SELECT *, ROW_NUMBER() OVER (
-                    PARTITION BY RTRIM(LTRIM([PlanningID])), ISNULL([State], ''),
-                                 ISNULL([Chain Status], ''), ISNULL([Premise Type], ''),
-                                 ISNULL([Brand], ''), ISNULL([Top Chain], ''),
-                                 CAST([Date] AS DATE), CAST([DateVersion] AS DATE)
-                    ORDER BY [LoadTimestamp] DESC
-                ) AS rn
-                FROM [{settings.FABRIC_SCHEMA}].[{settings.TABLE_FCST_24MO_LOCKED}]
-                WHERE CAST([DateVersion] AS DATE) = CAST('{selected_version_sql}' AS DATE)
-            )
-            SELECT DISTINCT
-                [State], [Brand], [Chain Status], [Premise Type], [Top Chain],
-                CAST([Date] AS DATE) AS [Date]
-            FROM LatestLogicalRows
-            WHERE rn = 1 AND [State] = '{st}' AND [Brand] = '{br}'
-        """
-        df_template = execute_query(query)
-
-        if df_template.empty:
-            raise ValueError(f"No existing template rows found for State: '{payload.state}' and Brand: '{payload.brand}'.")
-
-        insert_payload = []
-        for _, r in df_template.iterrows():
-            insert_payload.append({
-                "PlanningID": new_pid,
-                "State": str(r["State"]),
-                "ChainStatus": str(r["Chain Status"] or ""),
-                "PremiseType": str(r["Premise Type"] or ""),
-                "Brand": str(r["Brand"] or ""),
-                "TopChain": str(r["Top Chain"] or ""),
-                "Date": str(r["Date"]),
-                "ForecastQty_9L": 0.0,
-                "DateVersion": selected_date_version,
-                "LoadTimestamp": load_timestamp
-            })
-
-    elif payload.template_choice == "existing":
+        raise ValueError('Invalid Dashboard DateVersion.') from exc
+    if payload.template_choice not in {'new', 'existing'}:
+        raise ValueError('Invalid template choice.')
+    if not payload.demand_plan_id.strip():
+        raise ValueError('Select a Demand Plan ID.')
+    master = fetch_item_master_data(payload.brand)
+    if payload.demand_plan_id.strip().casefold() not in {str(x['demand_plan_id']).strip().casefold() for x in master}:
+        raise ValueError('The Demand Plan ID is not available for the Dashboard Brand Type.')
+    where, params = creation_filter_sql(payload.brand, payload.state, payload.chain_status,
+                                        payload.premise_type, payload.top_chain, version)
+    if payload.template_choice == 'existing':
         if not payload.existing_demand_plan_id:
-            raise ValueError("Existing Demand Plan ID is required for 'existing' template choice.")
+            raise ValueError('Select an existing Demand Plan ID.')
+        where += ' AND RTRIM(LTRIM([PlanningID])) = ?'
+        params += (payload.existing_demand_plan_id.strip(),)
+    quantity = 'SUM([ForecastQty_9L])' if payload.template_choice == 'existing' else 'CAST(0 AS DECIMAL(18,6))'
+    df = execute_query(f"""
+        WITH LatestRows AS (
+            SELECT *, DENSE_RANK() OVER (
+                PARTITION BY RTRIM(LTRIM([PlanningID])), ISNULL([State], ''),
+                    ISNULL([Chain Status], ''), ISNULL([Premise Type], ''),
+                    ISNULL([Brand], ''), ISNULL([Top Chain], ''),
+                    CAST([Date] AS DATE), CAST([DateVersion] AS DATE)
+                ORDER BY [LoadTimestamp] DESC
+            ) AS rn
+            FROM [{settings.FABRIC_SCHEMA}].[{settings.TABLE_FCST_24MO_LOCKED}]
+            WHERE {where}
+        )
+        SELECT ISNULL([State], '') AS [State], ISNULL([Chain Status], '') AS [ChainStatus],
+            ISNULL([Premise Type], '') AS [PremiseType], ISNULL([Brand], '') AS [Brand],
+            ISNULL([Top Chain], '') AS [TopChain], CAST([Date] AS DATE) AS [Date],
+            {quantity} AS [ForecastQty_9L]
+        FROM LatestRows WHERE rn = 1
+        GROUP BY ISNULL([State], ''), ISNULL([Chain Status], ''), ISNULL([Premise Type], ''),
+            ISNULL([Brand], ''), ISNULL([Top Chain], ''), CAST([Date] AS DATE)
+    """, params)
+    if df.empty:
+        raise ValueError('No template rows match the Dashboard filters and DateVersion.')
+    # Compare the complete combination, including month and selected version.
+    existing = execute_query(f"""
+        SELECT [State], [Chain Status] AS [ChainStatus], [Premise Type] AS [PremiseType],
+            [Brand], [Top Chain] AS [TopChain], CAST([Date] AS DATE) AS [Date]
+        FROM [{settings.FABRIC_SCHEMA}].[{settings.TABLE_FCST_24MO_LOCKED}]
+        WHERE RTRIM(LTRIM([PlanningID])) = ?
+          AND CAST([DateVersion] AS DATE) = CAST(? AS DATE)
+    """, (payload.demand_plan_id.strip(), version))
+    def key(row):
+        return tuple(('' if pd.isna(row[x]) else str(row[x]).strip().casefold())
+                     for x in ['State', 'ChainStatus', 'PremiseType', 'Brand', 'TopChain']) + (pd.to_datetime(row['Date']).strftime('%Y-%m-%d'),)
+    existing_keys = {key(row) for row in existing.to_dict(orient='records')}
+    candidates = df.to_dict(orient='records')
+    missing = [row for row in candidates if key(row) not in existing_keys]
+    return version, missing, len(candidates) - len(missing)
 
-        ex_pid = payload.existing_demand_plan_id.replace("'", "''").strip()
 
-        # Extract combinations matching state, brand, and existing planning ID
-        query = f"""
-            WITH LatestLogicalRows AS (
-                SELECT *, ROW_NUMBER() OVER (
-                    PARTITION BY RTRIM(LTRIM([PlanningID])), ISNULL([State], ''),
-                                 ISNULL([Chain Status], ''), ISNULL([Premise Type], ''),
-                                 ISNULL([Brand], ''), ISNULL([Top Chain], ''),
-                                 CAST([Date] AS DATE), CAST([DateVersion] AS DATE)
-                    ORDER BY [LoadTimestamp] DESC
-                ) AS rn
-                FROM [{settings.FABRIC_SCHEMA}].[{settings.TABLE_FCST_24MO_LOCKED}]
-                WHERE CAST([DateVersion] AS DATE) = CAST('{selected_version_sql}' AS DATE)
-            )
-            SELECT DISTINCT
-                [State], [Brand], [Chain Status], [Premise Type], [Top Chain],
-                CAST([Date] AS DATE) AS [Date], [ForecastQty_9L]
-            FROM LatestLogicalRows
-            WHERE rn = 1
-              AND [State] = '{st}'
-              AND [Brand] = '{br}'
-              AND RTRIM(LTRIM([PlanningID])) = '{ex_pid}'
-        """
-        df_template = execute_query(query)
+def check_new_planning_item(payload: AddNewItemPayload):
+    version, rows, skipped = prepare_new_planning_rows(payload)
+    return {'can_create': bool(rows), 'duplicate': not rows, 'new_rows': len(rows),
+            'existing_rows': skipped, 'date_version': version}
 
-        if df_template.empty:
-            raise ValueError(f"No template found for PlanningID '{payload.existing_demand_plan_id}', State '{payload.state}', and Brand '{payload.brand}'.")
 
-        insert_payload = []
-        for _, r in df_template.iterrows():
-            insert_payload.append({
-                "PlanningID": new_pid,
-                "State": str(r["State"]),
-                "ChainStatus": str(r["Chain Status"] or ""),
-                "PremiseType": str(r["Premise Type"] or ""),
-                "Brand": str(r["Brand"] or ""),
-                "TopChain": str(r["Top Chain"] or ""),
-                "Date": str(r["Date"]),
-                "ForecastQty_9L": sanitize_float(r["ForecastQty_9L"]),
-                "DateVersion": selected_date_version,
-                "LoadTimestamp": load_timestamp
-            })
-
-    else:
-        raise ValueError("Invalid template choice specified.")
+def create_new_planning_item(payload: AddNewItemPayload) -> Dict[str, Any]:
+    selected_date_version, source_rows, skipped = prepare_new_planning_rows(payload)
+    if not source_rows:
+        raise ValueError('The item already exists for all matching Dashboard combinations and months.')
+    load_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+    insert_payload = [{
+        'PlanningID': payload.demand_plan_id.strip(),
+        'State': row['State'], 'ChainStatus': row['ChainStatus'],
+        'PremiseType': row['PremiseType'], 'Brand': row['Brand'], 'TopChain': row['TopChain'],
+        'Date': pd.to_datetime(row['Date']).strftime('%Y-%m-%d'),
+        'ForecastQty_9L': sanitize_float(row['ForecastQty_9L']),
+        'DateVersion': selected_date_version, 'LoadTimestamp': load_timestamp,
+    } for row in source_rows]
 
     # Execute UTF-8 bulk insertion using OPENJSON
     json_insert = json.dumps(insert_payload)
     insert_sql = f"""
         INSERT INTO [{settings.FABRIC_SCHEMA}].[{settings.TABLE_FCST_24MO_LOCKED}] (
-            [PlanningID], [State], [Chain Status], [Premise Type], 
+            [PlanningID], [State], [Chain Status], [Premise Type],
             [Brand], [Top Chain], [Date], [ForecastQty_9L], [DateVersion], [LoadTimestamp]
         )
-        SELECT 
+        SELECT
             [PlanningID], [State], [ChainStatus], [PremiseType],
-            [Brand], [TopChain], CAST([Date] AS DATE), [ForecastQty_9L], [DateVersion], CAST([LoadTimestamp] AS DATETIME2(3))
+            [Brand], [TopChain], CAST([Date] AS DATE), [ForecastQty_9L], [DateVersion], CAST([LoadTimestamp] AS DATETIME2(6))
         FROM OPENJSON(?)
         WITH (
-            [PlanningID] NVARCHAR(255) '$.PlanningID',
-            [State] NVARCHAR(100) '$.State',
-            [ChainStatus] NVARCHAR(100) '$.ChainStatus',
-            [PremiseType] NVARCHAR(100) '$.PremiseType',
-            [Brand] NVARCHAR(255) '$.Brand',
-            [TopChain] NVARCHAR(255) '$.TopChain',
-            [Date] VARCHAR(50) '$.Date',
-            [ForecastQty_9L] FLOAT '$.ForecastQty_9L',
-            [DateVersion] VARCHAR(50) '$.DateVersion',
-            [LoadTimestamp] VARCHAR(30) '$.LoadTimestamp'
+            [PlanningID] VARCHAR(8000) '$.PlanningID',
+            [State] VARCHAR(8000) '$.State',
+            [ChainStatus] VARCHAR(8000) '$.ChainStatus',
+            [PremiseType] VARCHAR(100) '$.PremiseType',
+            [Brand] VARCHAR(50) '$.Brand',
+            [TopChain] VARCHAR(8000) '$.TopChain',
+            [Date] DATE '$.Date',
+            [ForecastQty_9L] DECIMAL(18,6) '$.ForecastQty_9L',
+            [DateVersion] VARCHAR(8000) '$.DateVersion',
+            [LoadTimestamp] DATETIME2(6) '$.LoadTimestamp'
         )
     """
     execute_non_query_utf8_safe(insert_sql, json_insert)

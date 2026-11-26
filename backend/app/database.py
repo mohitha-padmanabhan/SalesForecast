@@ -48,7 +48,7 @@ def execute_non_query(query: str, params: tuple = ()):
         cursor.execute(query, params)
 
 def execute_non_query_utf8_safe(query: str, json_string: str):
-    """Executes OPENJSON operations in Microsoft Fabric while forcing 
+    """Executes OPENJSON operations in Microsoft Fabric while forcing
     pyodbc to bind the parameter strictly as SQL_WVARCHAR to prevent UTF-8/LOB collation errors.
     """
     conn = get_db_connection()

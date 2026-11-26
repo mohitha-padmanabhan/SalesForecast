@@ -1,11 +1,14 @@
+import useStoredSelection from '../../hooks/useStoredSelection';
+import PlanningFilter, {ClearFilterButton} from '../../components/PlanningFilter';
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  fetchFilterOptions, 
-  fetchGridData, 
-  submitForecastAdjustments, 
+import {
+  fetchFilterOptions,
+  fetchGridData,
+  submitForecastAdjustments,
   fetchItemMasterData,
   fetchExistingDemandPlanIds,
+  checkPlanningItemCreation,
   createNewPlanningItem
 } from '../../api/forecastApi';
 import './Dashboard.css';
@@ -53,7 +56,7 @@ function makeDynamicRows(plan) {
   });
 
   const currentYear = new Date().getFullYear();
-  const yearsList = extractedYears.size > 0 
+  const yearsList = extractedYears.size > 0
     ? Array.from(extractedYears).sort((a, b) => a - b)
     : [currentYear - 2, currentYear - 1, currentYear, currentYear + 1];
 
@@ -70,9 +73,9 @@ function makeDynamicRows(plan) {
       let kind = 'Actual';
       let value = 0;
       let budgetVal = budgetArr[idx] !== undefined && budgetArr[idx] !== null ? Number(budgetArr[idx]) : null;
-      
-      let previouslyForecasted = prevForecastsArr[idx] !== undefined && prevForecastsArr[idx] !== null 
-        ? Number(prevForecastsArr[idx]) 
+
+      let previouslyForecasted = prevForecastsArr[idx] !== undefined && prevForecastsArr[idx] !== null
+        ? Number(prevForecastsArr[idx])
         : null;
 
       if (year < currentYear) {
@@ -113,16 +116,15 @@ function makeDynamicRows(plan) {
 function Dashboard() {
   const navigate = useNavigate();
   const [tempTotalInputs, setTempTotalInputs] = useState({});
-  const [filters, setFilters] = useState({ 
-    state: 'All', 
-    chainStatus: 'All', 
-    premiseType: 'All', 
-    topChain: 'All', 
-    dateVersion: '', 
-    brandType: 'All' 
+  const [filters, setFilters] = useStoredSelection('filters', {
+    state: 'All',
+    chainStatus: 'All',
+    premiseType: 'All',
+    topChain: 'All',
+    dateVersion: '',
+    brandType: 'All'
   });
-  
-  const stateEdit = useStateEditLock(filters.state);
+
   const [filterOptions, setFilterOptions] = useState({
     states: [],
     chainStatuses: [],
@@ -133,21 +135,22 @@ function Dashboard() {
   });
 
   const [gridData, setGridData] = useState([]);
-  const [selectedId, setSelectedId] = useState('');
-  const selectedIdRef = useRef('');
+  const [selectedId, setSelectedId] = useStoredSelection('dashboard.planningId', '');
+  const selectedIdRef = useRef(selectedId);
+  const [selectionWarning, setSelectionWarning] = useState('');
   const [planType, setPlanType] = useState(null);
   const [annualTarget, setAnnualTarget] = useState(0);
   const [rows, setRows] = useState([]);
   const [saved, setSaved] = useState(false);
   const [latestLoadTimestamp, setLatestLoadTimestamp] = useState('');
   const [latestDateVersion, setLatestDateVersion] = useState('');
-  
+
   const [initialLoading, setInitialLoading] = useState(true);
   const [loading, setLoading] = useState(false);
-  
-  const [tableFilters, setTableFilters] = useState({ 
-    years: [], 
-    dataCombinations: COMBINATION_OPTIONS.map(c => c.value) 
+
+  const [tableFilters, setTableFilters] = useStoredSelection('dashboard.matrix', {
+    years: [],
+    dataCombinations: COMBINATION_OPTIONS.map(c => c.value)
   });
 
   const [isYearDropdownOpen, setIsYearDropdownOpen] = useState(false);
@@ -157,11 +160,10 @@ function Dashboard() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submittingModal, setSubmittingModal] = useState(false);
   const [forecastSubmitting, setForecastSubmitting] = useState(false);
-  const [varianceMode, setVarianceMode] = useState("budget");
+  const stateEdit = useStateEditLock(filters.state, forecastSubmitting || submittingModal);
+  const [varianceMode, setVarianceMode] = useStoredSelection('varianceMode', 'budget');
   const [newItemForm, setNewItemForm] = useState({
     demandPlanId: '',
-    brand: '',
-    state: '',
     templateChoice: 'existing',
     existingDemandPlanId: ''
   });
@@ -171,6 +173,10 @@ function Dashboard() {
   const [loadingModalIds, setLoadingModalIds] = useState(false);
   const [modalIdsKey, setModalIdsKey] = useState('');
   const [modalIdsError, setModalIdsError] = useState('');
+  const [loadingDemandIds, setLoadingDemandIds] = useState(false);
+  const [demandIdsError, setDemandIdsError] = useState('');
+  const [demandIdsKey, setDemandIdsKey] = useState('');
+  const demandIdsReady = demandIdsKey === JSON.stringify(filters) && !loadingDemandIds && !demandIdsError;
   const [matrixExpanded, setMatrixExpanded] = useState(false);
   const matrixDialogRef = useRef(null);
   const matrixTableRef = useRef(null);
@@ -180,7 +186,8 @@ function Dashboard() {
   const [loadedFilters, setLoadedFilters] = useState(null);
   const expandButtonRef = useRef(null);
   const forecastRequestRef = useRef(0);
-  const duplicateCheckPending = loadingModalIds || modalIdsKey !== JSON.stringify([newItemForm.brand, newItemForm.state]);
+  const modalContextKey = JSON.stringify([filters, newItemForm.demandPlanId, newItemForm.templateChoice, newItemForm.existingDemandPlanId]);
+  const duplicateCheckPending = loadingModalIds || modalIdsKey !== modalContextKey;
 
   useEffect(() => {
     if (!matrixExpanded) return;
@@ -189,7 +196,12 @@ function Dashboard() {
     const dialog = matrixDialogRef.current;
     dialog?.querySelector('button')?.focus();
     const onKey = event => {
-      if (event.key === 'Escape') setMatrixExpanded(false);
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        setMatrixExpanded(false);
+        return;
+      }
       if (event.key === 'Tab') {
         const controls = [...dialog.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),[tabindex="0"]')].filter(el => el.getClientRects().length);
         const first = controls[0], last = controls[controls.length - 1];
@@ -197,10 +209,10 @@ function Dashboard() {
         else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
       }
     };
-    document.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
     return () => {
       document.body.style.overflow = previousOverflow;
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('keydown', onKey, true);
       expandButtonRef.current?.focus();
     };
   }, [matrixExpanded]);
@@ -208,10 +220,7 @@ function Dashboard() {
   const yearDropdownRef = useRef(null);
   const comboDropdownRef = useRef(null);
 
-  const isIdAlreadyExisting = useMemo(() => {
-    if (!newItemForm.demandPlanId) return false;
-    return existingForecastPlanIds.some(id => String(id).trim().toLowerCase() === newItemForm.demandPlanId.trim().toLowerCase());
-  }, [newItemForm.demandPlanId, existingForecastPlanIds]);
+  const [isIdAlreadyExisting, setIsIdAlreadyExisting] = useState(false);
 
   const isAnyFilterSelected = useMemo(() => {
     return (
@@ -234,7 +243,7 @@ function Dashboard() {
       setInitialLoading(true);
       try {
         const data = await fetchFilterOptions();
-        
+
         setFilterOptions({
           states: data.states || [],
           chainStatuses: data.chain_statuses || ["CHAIN", "INDEPENDENT"],
@@ -246,10 +255,10 @@ function Dashboard() {
 
         const defaultVersion = data.default_date_version || (data.date_versions && data.date_versions[0]) || '';
         setLatestDateVersion(defaultVersion);
-        
-        setFilters(prev => ({ 
-          ...prev, 
-          dateVersion: defaultVersion 
+
+        setFilters(prev => ({
+          ...prev,
+          dateVersion: (data.date_versions || []).includes(prev.dateVersion) ? prev.dateVersion : defaultVersion
         }));
 
 
@@ -267,6 +276,7 @@ function Dashboard() {
   useEffect(() => {
     if (initialLoading) return;
 
+    let active = true;
     const updateCascadingFilters = async () => {
       try {
         const data = await fetchFilterOptions({
@@ -277,6 +287,7 @@ function Dashboard() {
           dateVersion: filters.dateVersion
         });
 
+        if (!active) return;
         setFilterOptions(prev => {
           const updatedTopChains = data.top_chains || [];
           const updatedPremiseTypes = data.premise_types || [];
@@ -303,54 +314,80 @@ function Dashboard() {
     };
 
     updateCascadingFilters();
+    return () => { active = false; };
   }, [filters.state, filters.chainStatus, filters.premiseType, filters.brandType, filters.dateVersion, filters.topChain, initialLoading]);
 
   // Item Master IDs follow the Brand filter selected on the dashboard.
   // With All Brands selected, the complete item-master list is shown.
   useEffect(() => {
-    if (initialLoading) return;
-
+    if (initialLoading || !isModalOpen || !filters.dateVersion) return;
+    let active = true;
+    const key = JSON.stringify(filters);
+    setLoadingDemandIds(true);
+    setDemandIdsError('');
+    setDemandIdsKey('');
+    setDemandPlanOptions([]);
     const loadItemMasterIds = async () => {
       try {
-        const itemMasterRecords = await fetchItemMasterData(filters.brandType || 'All');
-        const uniqueDemandPlanIds = Array.from(
-          new Set(
-            (Array.isArray(itemMasterRecords) ? itemMasterRecords : [])
-              .map(item => typeof item === 'string' ? item : item?.demand_plan_id)
-              .filter(Boolean)
-          )
-        ).sort((a, b) => String(a).localeCompare(String(b)));
-        setDemandPlanOptions(uniqueDemandPlanIds);
-        setNewItemForm(prev =>
-          prev.demandPlanId && !uniqueDemandPlanIds.includes(prev.demandPlanId)
-            ? { ...prev, demandPlanId: '' }
-            : prev
-        );
+        const [masterRecords, existingIds] = await Promise.all([
+          fetchItemMasterData(filters.brandType || 'All'),
+          fetchExistingDemandPlanIds(filters),
+        ]);
+        if (!active) return;
+        const normalize = value => String(value).trim().toLowerCase();
+        const existing = new Set(existingIds.map(normalize));
+        const available = Array.from(new Set(
+          (Array.isArray(masterRecords) ? masterRecords : [])
+            .map(item => typeof item === 'string' ? item : item?.demand_plan_id)
+            .filter(value => value && !existing.has(normalize(value)))
+        )).sort((a, b) => String(a).localeCompare(String(b)));
+        setDemandPlanOptions(available);
+        setDemandIdsKey(key);
+        setNewItemForm(prev => prev.demandPlanId && !available.includes(prev.demandPlanId)
+          ? {...prev, demandPlanId: ''} : prev);
       } catch (err) {
-        console.error('Failed to load item master demand plan IDs:', err);
+        if (!active) return;
         setDemandPlanOptions([]);
+        setDemandIdsError('Unable to load available Demand Plan IDs. Reopen this dialog to retry.');
+      } finally {
+        if (active) setLoadingDemandIds(false);
       }
     };
-
     loadItemMasterIds();
-  }, [filters.brandType, initialLoading]);
+    return () => { active = false; };
+  }, [filters, initialLoading, isModalOpen]);
 
   // Dynamic Fetching of Existing Plan IDs for Modal
   useEffect(() => {
     if (!isModalOpen) return;
 
     let active = true;
-    const key = JSON.stringify([newItemForm.brand, newItemForm.state]);
+    const key = modalContextKey;
     setLoadingModalIds(true);
     setModalIdsKey('');
     setModalIdsError('');
     setExistingForecastPlanIds([]);
     const updateModalExistingIds = async () => {
       try {
-        const ids = await fetchExistingDemandPlanIds({brand: newItemForm.brand || 'All', state: newItemForm.state || 'All'});
-        if (active) { setExistingForecastPlanIds(ids); setModalIdsKey(key); }
+        const ids = await fetchExistingDemandPlanIds(filters);
+        if (!active) return;
+        setExistingForecastPlanIds(ids);
+        if (newItemForm.existingDemandPlanId && !ids.includes(newItemForm.existingDemandPlanId)) {
+          setNewItemForm(prev => ({...prev, existingDemandPlanId: ''}));
+          return;
+        }
+        let duplicate = false;
+        if (newItemForm.demandPlanId && (newItemForm.templateChoice === 'new' || newItemForm.existingDemandPlanId)) {
+          const result = await checkPlanningItemCreation({
+            ...newItemForm, state: filters.state, brand: filters.brandType,
+            chainStatus: filters.chainStatus, premiseType: filters.premiseType,
+            topChain: filters.topChain, dateVersion: filters.dateVersion, editScope: filters.state,
+          });
+          duplicate = result.duplicate;
+        }
+        if (active) { setIsIdAlreadyExisting(duplicate); setModalIdsKey(key); }
       } catch (err) {
-        if (active) setModalIdsError('Unable to check existing items. Reopen this dialog to retry.');
+        if (active) setModalIdsError(err.response?.data?.detail || 'Unable to check matching items. Reopen this dialog to retry.');
         console.error('Failed to load modal demand plan IDs:', err);
       } finally {
         if (active) setLoadingModalIds(false);
@@ -358,7 +395,7 @@ function Dashboard() {
     };
     updateModalExistingIds();
     return () => { active = false; };
-  }, [newItemForm.brand, newItemForm.state, isModalOpen]);
+  }, [modalContextKey, isModalOpen]);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -375,7 +412,9 @@ function Dashboard() {
 
   const loadForecastData = useCallback(async (activeVersion) => {
     const requestId = ++forecastRequestRef.current;
+    setSelectionWarning('');
     if (!isAnyFilterSelected) {
+      selectedIdRef.current = '';
       setLoading(false);
       setGridData([]);
       setSelectedId('');
@@ -385,6 +424,8 @@ function Dashboard() {
     }
 
     setLoadedFilters(null);
+    setPlanType(null);
+    setTempTotalInputs({});
     setLoading(true);
     try {
       const payload = {
@@ -405,17 +446,25 @@ function Dashboard() {
       setLoadedFilters(filters);
       setLatestLoadTimestamp(resData?.statistics?.latest_load_timestamp || '');
 
-      if (items.length > 0) {
-        const currentSelection = items.find(i => i.planning_id === selectedIdRef.current) || items[0];
+      const requestedId = selectedIdRef.current;
+      const currentSelection = requestedId
+        ? items.find(item => item.planning_id === requestedId)
+        : items[0];
+      if (currentSelection) {
         selectedIdRef.current = currentSelection.planning_id;
         setSelectedId(currentSelection.planning_id);
         setAnnualTarget(currentSelection.annualTarget || 0);
         setRows(makeDynamicRows(currentSelection));
       } else {
-        selectedIdRef.current = '';
-        setSelectedId('');
         setRows([]);
         setAnnualTarget(0);
+        if (requestedId) {
+          setSelectionWarning(
+            `${requestedId} is unavailable for the selected filters. Choose another Planning ID or adjust the filters.`
+          );
+        } else {
+          setSelectedId('');
+        }
       }
     } catch (err) {
       if (requestId === forecastRequestRef.current) console.error('Failed to fetch forecast grid:', err);
@@ -434,7 +483,7 @@ function Dashboard() {
   const dynamicYears = useMemo(() => {
     const set = new Set(rows.map(r => r.year));
     return Array.from(set).sort((a, b) => a - b);
-  }, [rows]); 
+  }, [rows]);
 
   useEffect(() => {
     if (dynamicYears.length > 0 && tableFilters.years.length === 0) {
@@ -448,10 +497,13 @@ function Dashboard() {
   }, [dynamicYears]);
 
   const selectedPlan = useMemo(() => {
-    return gridData.find(p => p.planning_id === selectedId) || gridData[0] || null;
-  }, [gridData, selectedId]);
+    if (loadedFilters !== filters) return null;
+    return gridData.find(plan => plan.planning_id === selectedId) || null;
+  }, [gridData, selectedId, loadedFilters, filters]);
 
   const choosePlan = (plan) => {
+    if (loadedFilters !== filters) return;
+    setSelectionWarning('');
     selectedIdRef.current = plan.planning_id;
     setSelectedId(plan.planning_id);
     setAnnualTarget(plan.annualTarget || 0);
@@ -570,11 +622,15 @@ function Dashboard() {
     });
     setIsYearDropdownOpen(false);
     setIsComboDropdownOpen(false);
+    setSelectedId('');
+    setVarianceMode('budget');
+    selectedIdRef.current = '';
     setPlanType(null);
     setSaved(false);
   };
 
   const switchPlanType = async (type) => {
+    if (!selectedPlan || loading || initialLoading) return;
     if (!await stateEdit.ensureEdit()) return;
     setPlanType(type);
     if (selectedPlan) {
@@ -598,9 +654,9 @@ function Dashboard() {
     if (!planType || !stateEdit.canEdit || !selectedPlan || forecastSubmitting || importing || loadedFilters !== filters || !isLatestDateVersion) return;
     setForecastSubmitting(true);
 
-    const userEmail = localStorage.getItem('user_email') || 
-                      localStorage.getItem('userEmail') || 
-                      localStorage.getItem('user') || 
+    const userEmail = localStorage.getItem('user_email') ||
+                      localStorage.getItem('userEmail') ||
+                      localStorage.getItem('user') ||
                       'user@company.com';
 
     const initialRows = makeDynamicRows(selectedPlan);
@@ -696,8 +752,8 @@ function Dashboard() {
         await loadForecastData(filters.dateVersion);
       }
     } catch (error) {
-      const detailMessage = error?.response?.data?.detail 
-        ? JSON.stringify(error.response.data.detail) 
+      const detailMessage = error?.response?.data?.detail
+        ? JSON.stringify(error.response.data.detail)
         : error.message;
       console.error("Submission failed:", detailMessage);
       alert(`Submission failed: ${detailMessage}`);
@@ -728,8 +784,8 @@ function Dashboard() {
       const exists = prev.dataCombinations.includes(val);
       return {
         ...prev,
-        dataCombinations: exists 
-          ? prev.dataCombinations.filter(c => c !== val) 
+        dataCombinations: exists
+          ? prev.dataCombinations.filter(c => c !== val)
           : [...prev.dataCombinations, val]
       };
     });
@@ -738,8 +794,8 @@ function Dashboard() {
   const toggleAllCombos = () => {
     setTableFilters(prev => ({
       ...prev,
-      dataCombinations: prev.dataCombinations.length === COMBINATION_OPTIONS.length 
-        ? [] 
+      dataCombinations: prev.dataCombinations.length === COMBINATION_OPTIONS.length
+        ? []
         : COMBINATION_OPTIONS.map(c => c.value)
     }));
   };
@@ -763,10 +819,6 @@ function Dashboard() {
   const handleOpenModal = () => {
     setModalIdsKey('');
     setModalIdsError('');
-    setNewItemForm(prev => ({
-      ...prev,
-      brand: filters.brandType !== 'All' ? filters.brandType : prev.brand
-    }));
     setIsModalOpen(true);
   };
 
@@ -774,8 +826,6 @@ function Dashboard() {
     setIsModalOpen(false);
     setNewItemForm({
       demandPlanId: '',
-      brand: '',
-      state: '',
       templateChoice: 'existing',
       existingDemandPlanId: ''
     });
@@ -783,9 +833,9 @@ function Dashboard() {
 
   const handleCreateNewItem = async (e) => {
     e.preventDefault();
-    if (submittingModal || duplicateCheckPending || modalIdsError || isIdAlreadyExisting) return;
+    if (submittingModal || !demandIdsReady || duplicateCheckPending || modalIdsError || isIdAlreadyExisting) return;
 
-    if (!newItemForm.demandPlanId || !newItemForm.brand || !newItemForm.state) {
+    if (!newItemForm.demandPlanId) {
       alert("Please fill in all required fields.");
       return;
     }
@@ -800,17 +850,16 @@ function Dashboard() {
     try {
       await createNewPlanningItem({
         ...newItemForm,
+        state: filters.state, brand: filters.brandType,
+        chainStatus: filters.chainStatus, premiseType: filters.premiseType,
+        topChain: filters.topChain,
         editScope: filters.state,
         dateVersion: filters.dateVersion || latestDateVersion
       });
       alert(`Successfully created demand plan ID: ${newItemForm.demandPlanId}`);
       handleCloseModal();
 
-      setFilters(prev => ({
-        ...prev,
-        state: newItemForm.state,
-        brandType: newItemForm.brand
-      }));
+      setFilters(prev => ({...prev}));
     } catch (err) {
       console.error("Failed to create new item:", err);
       alert(`Error creating item: ${err.message}`);
@@ -869,6 +918,22 @@ function Dashboard() {
     </button>
   );
 
+  useEffect(() => {
+    const onEscape = event => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.repeat) return;
+      // Let the expanded matrix handle its existing Escape-to-close behavior.
+      if (matrixExpanded) return;
+      event.preventDefault();
+      if (isModalOpen) {
+        if (!submittingModal) handleCloseModal();
+        return;
+      }
+      if (!forecastSubmitting && !submittingModal && !importing) clearAllFilters();
+    };
+    window.addEventListener('keydown', onEscape);
+    return () => window.removeEventListener('keydown', onEscape);
+  });
+
   const isRowVisible = (rowKind, rowType) => {
     const selectedCombos = tableFilters.dataCombinations;
     if (selectedCombos.length === 0) return false;
@@ -886,7 +951,7 @@ function Dashboard() {
     <main className="forecast-dashboard" style={{ position: 'relative' }}>
       <input ref={importInputRef} type="file" accept=".xlsx" hidden onChange={importForecast} />
       {forecastSubmitting && <div className="page-loading-overlay" role="status" aria-live="polite"><div className="page-loading-content"><div className="page-loading-spinner"/><strong>Submitting Forecast...</strong><span>Please wait while your forecast is being saved.</span></div></div>}
-      
+
       {initialLoading && (
         <div className="full-loader-overlay">
           <div className="spinner-lg"></div>
@@ -912,14 +977,15 @@ function Dashboard() {
           <span className={`view-badge ${!planType ? 'active' : ''}`}>{!planType ? 'View Mode' : 'Edit Mode'}</span>
           {isLatestDateVersion && (
             <div className="mode-switch" aria-label="Planning mode">
-              <button className={planType === 'month' ? 'active' : ''} onClick={() => switchPlanType('month')}>Plan by Month</button>
-              <button className={planType === 'year' ? 'active' : ''} onClick={() => switchPlanType('year')}>Plan by Year</button>
+              <button className={planType === 'month' ? 'active' : ''} disabled={!selectedPlan || loading || initialLoading} onClick={() => switchPlanType('month')}>Plan by Month</button>
+              <button className={planType === 'year' ? 'active' : ''} disabled={!selectedPlan || loading || initialLoading} onClick={() => switchPlanType('year')}>Plan by Year</button>
             </div>
           )}
         </div>
       </header>
 
       {stateEdit.message && <div role="status" className="summary-error">{stateEdit.message}</div>}
+      {selectionWarning && <div className="summary-error" role="alert">{selectionWarning}</div>}
       <section className="filter-card">
         <div className="filter-title">
           <span>Filters</span>
@@ -929,12 +995,12 @@ function Dashboard() {
           </div>
         </div>
         <div className="filter-grid">
-          <Filter label="State" value={filters.state} options={filterOptions.states} onChange={v => setFilters(prev => ({ ...prev, state: v }))} disabled={loading || initialLoading} />
-          <Filter label="Chain Status" value={filters.chainStatus} options={filterOptions.chainStatuses} onChange={v => setFilters(prev => ({ ...prev, chainStatus: v }))} disabled={loading || initialLoading} />
-          <Filter label="Premise Type" value={filters.premiseType} options={filterOptions.premiseTypes} onChange={v => setFilters(prev => ({ ...prev, premiseType: v }))} disabled={loading || initialLoading} />
-          <Filter label="Top Chain" value={filters.topChain} options={filterOptions.topChains} onChange={v => setFilters(prev => ({ ...prev, topChain: v }))} disabled={loading || initialLoading} />
-          <Filter label="Date Version" value={filters.dateVersion} options={filterOptions.versions} onChange={v => setFilters(prev => ({ ...prev, dateVersion: v }))} required disabled={loading || initialLoading} />
-          <Filter label="Brand Type" value={filters.brandType} options={filterOptions.brands} onChange={v => setFilters(prev => ({ ...prev, brandType: v }))} disabled={loading || initialLoading} />
+          <PlanningFilter label="State" value={filters.state} options={filterOptions.states} onChange={v => setFilters(prev => ({ ...prev, state: v }))} disabled={loading || initialLoading} />
+          <PlanningFilter label="Chain Status" value={filters.chainStatus} options={filterOptions.chainStatuses} onChange={v => setFilters(prev => ({ ...prev, chainStatus: v }))} disabled={loading || initialLoading} />
+          <PlanningFilter label="Premise Type" value={filters.premiseType} options={filterOptions.premiseTypes} onChange={v => setFilters(prev => ({ ...prev, premiseType: v }))} disabled={loading || initialLoading} />
+          <PlanningFilter label="Top Chain" value={filters.topChain} options={filterOptions.topChains} onChange={v => setFilters(prev => ({ ...prev, topChain: v }))} disabled={loading || initialLoading} />
+          <PlanningFilter label="Date Version" value={filters.dateVersion} options={filterOptions.versions} onChange={v => setFilters(prev => ({ ...prev, dateVersion: v }))} required clearValue={latestDateVersion} disabled={loading || initialLoading} />
+          <PlanningFilter label="Brand Type" value={filters.brandType} options={filterOptions.brands} onChange={v => setFilters(prev => ({ ...prev, brandType: v }))} disabled={loading || initialLoading} />
         </div>
       </section>
 
@@ -951,9 +1017,9 @@ function Dashboard() {
           </div>
           <div className="planning-list">
             {gridData.map(plan => (
-              <button 
-                key={plan.planning_id} 
-                onClick={() => choosePlan(plan)} 
+              <button
+                key={plan.planning_id}
+                onClick={() => choosePlan(plan)}
                 className={`plan-card ${selectedId === plan.planning_id ? 'selected' : ''}`}
               >
                 <div className="plan-id-tag">{plan.planning_id}</div>
@@ -961,8 +1027,8 @@ function Dashboard() {
             ))}
             {(!gridData.length || !isAnyFilterSelected) && !initialLoading && (
               <div className="empty-state">
-                {!isAnyFilterSelected 
-                  ? "Select top filter(s) to view planning IDs." 
+                {!isAnyFilterSelected
+                  ? "Select top filter(s) to view planning IDs."
                   : "No planning IDs match the selected filters."}
               </div>
             )}
@@ -1018,21 +1084,21 @@ function Dashboard() {
                 <strong>Filter Matrix by Year and Data Combinations</strong>
               </div>
               <div className="table-filter-group flex-row">
-                
+
                 <div className="custom-multiselect-container" ref={yearDropdownRef}>
-                  <span className="filter-label-title">Year Filter</span>
-                  <div 
-                    className="multiselect-trigger" 
+                  <div className="filter-heading"><span className="filter-label-title">Year Filter</span><ClearFilterButton label="Year Filter" onClear={() => setTableFilters(previous => ({...previous, years: dynamicYears}))}/></div>
+                  <div
+                    className="multiselect-trigger"
                     onClick={() => {
                       setIsYearDropdownOpen(!isYearDropdownOpen);
                       setIsComboDropdownOpen(false);
                     }}
                   >
                     <span>
-                      {tableFilters.years.length === 0 
-                        ? 'Select Years' 
-                        : tableFilters.years.length === dynamicYears.length 
-                          ? 'All Years' 
+                      {tableFilters.years.length === 0
+                        ? 'Select Years'
+                        : tableFilters.years.length === dynamicYears.length
+                          ? 'All Years'
                           : `${tableFilters.years.length} Selected`}
                     </span>
                     <span className="arrow">{isYearDropdownOpen ? '▲' : '▼'}</span>
@@ -1041,20 +1107,20 @@ function Dashboard() {
                   {isYearDropdownOpen && (
                     <div className="multiselect-dropdown">
                       <label className="multiselect-option header-option">
-                        <input 
-                          type="checkbox" 
-                          checked={tableFilters.years.length === dynamicYears.length && dynamicYears.length > 0} 
-                          onChange={toggleAllYears} 
+                        <input
+                          type="checkbox"
+                          checked={tableFilters.years.length === dynamicYears.length && dynamicYears.length > 0}
+                          onChange={toggleAllYears}
                         />
                         <span><strong>(Select All)</strong></span>
                       </label>
                       <hr style={{ margin: '4px 0', border: 'none', borderTop: '1px solid #e2e8f0' }} />
                       {dynamicYears.map(year => (
                         <label key={year} className="multiselect-option">
-                          <input 
-                            type="checkbox" 
-                            checked={tableFilters.years.includes(year)} 
-                            onChange={() => toggleYearSelection(year)} 
+                          <input
+                            type="checkbox"
+                            checked={tableFilters.years.includes(year)}
+                            onChange={() => toggleYearSelection(year)}
                           />
                           <span>{year}</span>
                         </label>
@@ -1064,19 +1130,19 @@ function Dashboard() {
                 </div>
 
                 <div className="custom-multiselect-container" ref={comboDropdownRef}>
-                  <span className="filter-label-title">View Combination Filter</span>
-                  <div 
-                    className="multiselect-trigger" 
+                  <div className="filter-heading"><span className="filter-label-title">View Combination Filter</span><ClearFilterButton label="View Combination Filter" onClear={() => setTableFilters(previous => ({...previous, dataCombinations: COMBINATION_OPTIONS.map(option => option.value)}))}/></div>
+                  <div
+                    className="multiselect-trigger"
                     onClick={() => {
                       setIsComboDropdownOpen(!isComboDropdownOpen);
                       setIsYearDropdownOpen(false);
                     }}
                   >
                     <span>
-                      {tableFilters.dataCombinations.length === 0 
-                        ? 'Select Combinations' 
-                        : tableFilters.dataCombinations.length === COMBINATION_OPTIONS.length 
-                          ? 'All Combinations' 
+                      {tableFilters.dataCombinations.length === 0
+                        ? 'Select Combinations'
+                        : tableFilters.dataCombinations.length === COMBINATION_OPTIONS.length
+                          ? 'All Combinations'
                           : `${tableFilters.dataCombinations.length} Selected`}
                     </span>
                     <span className="arrow">{isComboDropdownOpen ? '▲' : '▼'}</span>
@@ -1085,20 +1151,20 @@ function Dashboard() {
                   {isComboDropdownOpen && (
                     <div className="multiselect-dropdown">
                       <label className="multiselect-option header-option">
-                        <input 
-                          type="checkbox" 
-                          checked={tableFilters.dataCombinations.length === COMBINATION_OPTIONS.length} 
-                          onChange={toggleAllCombos} 
+                        <input
+                          type="checkbox"
+                          checked={tableFilters.dataCombinations.length === COMBINATION_OPTIONS.length}
+                          onChange={toggleAllCombos}
                         />
                         <span><strong>(Select All)</strong></span>
                       </label>
                       <hr style={{ margin: '4px 0', border: 'none', borderTop: '1px solid #e2e8f0' }} />
                       {COMBINATION_OPTIONS.map(opt => (
                         <label key={opt.value} className="multiselect-option">
-                          <input 
-                            type="checkbox" 
-                            checked={tableFilters.dataCombinations.includes(opt.value)} 
-                            onChange={() => toggleComboSelection(opt.value)} 
+                          <input
+                            type="checkbox"
+                            checked={tableFilters.dataCombinations.includes(opt.value)}
+                            onChange={() => toggleComboSelection(opt.value)}
                           />
                           <span>{opt.label}</span>
                         </label>
@@ -1115,7 +1181,7 @@ function Dashboard() {
               <div className="legend">
                 <span><i className="dot actual"></i>Actuals</span>
                 <span><i className="dot forecast"></i>Forecast</span>
-                <span><i className="dot previous"></i>Statistical Forecast</span> 
+                <span><i className="dot previous"></i>Statistical Forecast</span>
                 <span><i className="dot budget"></i>Budget</span>
               </div>
             {exportMatrixButton}
@@ -1139,7 +1205,7 @@ function Dashboard() {
                 <tbody>
                   {visibleYears.map(year => {
                     const yearRows = rows.filter(r => r.year === year);
-                    
+
                     const isEditableYear = planType === 'year' && stateEdit.canEdit && year >= currentDynamicYear;
                     const prevForecastRows = yearRows.filter(r => r.previouslyForecasted !== null);
                     const prevTotal = prevForecastRows.reduce((s, r) => s + (r.previouslyForecasted || 0), 0);
@@ -1150,7 +1216,7 @@ function Dashboard() {
 
                     const showMainRow = isRowVisible('Actual', 'main') || isRowVisible('Forecast', 'main');
                     const showPrevRow = isRowVisible('', 'pre_forecast') && prevForecastRows.length > 0;
-                    const showBudgetRow = isRowVisible('', 'budget') && budgetRows.length > 0;
+                    const showBudgetRow = isRowVisible('', 'budget') && budgetRows.length > 0 && year === currentDynamicYear;
 
                     const mainTotal = yearRows
                       .filter(r => {
@@ -1255,7 +1321,7 @@ function Dashboard() {
 
                         {showBudgetRow && (
                           <tr className="budget-row">
-                            <th className="year-cell budget-label">{year === currentDynamicYear + 1 ? `Statistical Forecast (${year})` : `Budget (${year})`}</th>
+                            <th className="year-cell budget-label">{`Budget (${year})`}</th>
                             {MONTHS.map((month, idx) => {
                               const row = yearRows.find(r => r.monthIndex === idx);
                               const bVal = row ? row.budgetVal : null;
@@ -1388,8 +1454,10 @@ function Dashboard() {
         ) : (
           <section className="planning-main flex-center">
             <div className="empty-state-card">
-              <h3>No Filters Selected</h3>
-              <p>Please select at least one top filter (State, Chain Status, Premise Type, Top Chain, or Brand) to view demand forecast records.</p>
+              <h3>{isAnyFilterSelected ? 'Choose a Planning ID' : 'No Filters Selected'}</h3>
+              <p>{isAnyFilterSelected
+                ? 'Select an available Planning ID from the list, or adjust the filters to find your item.'
+                : 'Please select at least one top filter (State, Chain Status, Premise Type, Top Chain, or Brand) to view demand forecast records.'}</p>
             </div>
           </section>
         )}
@@ -1403,74 +1471,54 @@ function Dashboard() {
               <h3>Add New Planning Item</h3>
               <button className="close-btn" onClick={handleCloseModal}>&times;</button>
             </div>
-            
+
             <form onSubmit={handleCreateNewItem} className="modal-body">
               <div className="form-group">
-                <label>Item Master Demand Plan ID</label>
-                <select 
+                <label>Demand Plan ID</label>
+                <select
                   value={newItemForm.demandPlanId}
+                  disabled={!demandIdsReady || submittingModal}
                   onChange={e => setNewItemForm({ ...newItemForm, demandPlanId: e.target.value })}
                   required
                 >
-                  <option value="">Select Demand Plan ID</option>
+                  <option value="">{!demandIdsReady && !demandIdsError ? 'Loading available IDs...' : demandPlanOptions.length ? 'Select Demand Plan ID' : 'No available Demand Plan IDs for these filters'}</option>
                   {demandPlanOptions.map(id => (
                     <option key={id} value={id}>{id}</option>
                   ))}
                 </select>
+                {demandIdsError && <p role="alert" className="summary-error">{demandIdsError}</p>}
                 {isIdAlreadyExisting && (
                   <p style={{ color: '#dc2626', fontSize: '12px', marginTop: '4px', fontWeight: '500' }}>
-                    ⚠️ Warning: The item already exists for the selected brand and state filters.
+                    ⚠️ Warning: The item already exists for all matching Dashboard combinations and months.
                   </p>
                 )}
               </div>
 
-              <div className="form-group">
-                <label>Brand</label>
-                <select 
-                  value={newItemForm.brand}
-                  onChange={e => setNewItemForm({ ...newItemForm, brand: e.target.value })}
-                  required
-                >
-                  <option value="">Select Brand</option>
-                  {filterOptions.brands.map(b => (
-                    <option key={b} value={b}>{b}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label>State</label>
-                <select 
-                  value={newItemForm.state}
-                  onChange={e => setNewItemForm({ ...newItemForm, state: e.target.value })}
-                  required
-                >
-                  <option value="">Select State</option>
-                  {filterOptions.states.map(s => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </div>
+              <p className="modal-filter-context">
+                Uses Dashboard filters: State: {filters.state} · Brand: {filters.brandType} ·
+                Chain Status: {filters.chainStatus} · Premise Type: {filters.premiseType} ·
+                Top Chain: {filters.topChain} · DateVersion: {filters.dateVersion}
+              </p>
 
               <div className="form-group">
                 <label>Template Choice</label>
                 <div className="radio-group">
                   <label className="radio-label">
-                    <input 
-                      type="radio" 
-                      name="templateChoice" 
-                      value="new" 
+                    <input
+                      type="radio"
+                      name="templateChoice"
+                      value="new"
                       checked={newItemForm.templateChoice === 'new'}
                       onChange={e => setNewItemForm({ ...newItemForm, templateChoice: e.target.value })}
                     />
                     <span>New Template Choice</span>
                   </label>
-                  
+
                   <label className="radio-label">
-                    <input 
-                      type="radio" 
-                      name="templateChoice" 
-                      value="existing" 
+                    <input
+                      type="radio"
+                      name="templateChoice"
+                      value="existing"
                       checked={newItemForm.templateChoice === 'existing'}
                       onChange={e => setNewItemForm({ ...newItemForm, templateChoice: e.target.value })}
                     />
@@ -1481,8 +1529,8 @@ function Dashboard() {
 
               {newItemForm.templateChoice === 'existing' && (
                 <div className="form-group conditional-group">
-                  <label>Existing Demand Plan ID (from 24monforecast)</label>
-                  <select 
+                  <label>Existing Demand Plan ID (matching Dashboard filters)</label>
+                  <select
                     value={newItemForm.existingDemandPlanId}
                     onChange={e => setNewItemForm({ ...newItemForm, existingDemandPlanId: e.target.value })}
                     required
@@ -1504,7 +1552,7 @@ function Dashboard() {
                 <button type="button" className="secondary" onClick={handleCloseModal} disabled={submittingModal}>
                   Cancel
                 </button>
-                <button type="submit" className="primary" disabled={submittingModal || duplicateCheckPending || !!modalIdsError || isIdAlreadyExisting}>
+                <button type="submit" className="primary" disabled={submittingModal || !demandIdsReady || duplicateCheckPending || !!modalIdsError || isIdAlreadyExisting || !newItemForm.demandPlanId || (newItemForm.templateChoice === 'existing' && !newItemForm.existingDemandPlanId)}>
                   {submittingModal ? 'Creating...' : 'Create'}
                 </button>
               </div>
@@ -1517,19 +1565,8 @@ function Dashboard() {
   );
 }
 
-function Filter({ label, value, options, onChange, required, disabled }) {
-  return (
-    <label className="filter-field">
-      <span>{label}{required && <b> •</b>}</span>
-      <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled}>
-        {!required && <option value="All">All</option>}
-        {(options || []).map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
-    </label>
-  );
-}
 
-function Metric({ label, value, suffix, emphasize, details = [] }) { 
+function Metric({ label, value, suffix, emphasize, details = [] }) {
   return (
     <div className={`metric ${emphasize ? 'emphasize' : ''}`}>
       <span>{label}</span>
@@ -1546,6 +1583,6 @@ function Metric({ label, value, suffix, emphasize, details = [] }) {
         </div>
       )}
     </div>
-  ); 
+  );
 }
 export default Dashboard;

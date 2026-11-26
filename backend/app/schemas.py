@@ -114,12 +114,15 @@ class ItemMasterSchema(BaseModel):
     barcode_BTL: Optional[str] = Field(None, alias="barcode_BTL")
     barcode_CS: Optional[str] = Field(None, alias="barcode_CS")
     bc_itemStatus: Optional[str] = Field(None, alias="bc_itemStatus")
-    
+
 class AddNewItemPayload(BaseModel):
     edit_scope: Optional[str] = None
     demand_plan_id: str
-    state: str
-    brand: str
+    state: str = "All"
+    brand: str = "All"
+    chain_status: str = "All"
+    premise_type: str = "All"
+    top_chain: str = "All"
     template_choice: str  # 'new' or 'existing'
     existing_demand_plan_id: Optional[str] = None
     date_version: str

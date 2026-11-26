@@ -19,7 +19,7 @@ def get_filter_options(
         FROM [{settings.FABRIC_SCHEMA}].[{settings.TABLE_FCST_24MO_LOCKED}]
     """
     df_locked = execute_query(locked_query)
-    
+
     date_versions = []
     if 'DateVersion' in df_locked and not df_locked.empty:
         date_versions = sorted({str(v)[:10] for v in df_locked['DateVersion'].dropna().tolist()}, reverse=True)[:3]
@@ -28,7 +28,7 @@ def get_filter_options(
 
     # 2. Fetch ALL States (unfiltered by selected state so all dropdown choices remain visible)
     state_query = f"""
-        SELECT DISTINCT [State] 
+        SELECT DISTINCT [State]
         FROM [{settings.FABRIC_SCHEMA}].[{settings.TABLE_CHAIN_MASTER}]
         WHERE [State] IS NOT NULL
     """
@@ -51,13 +51,13 @@ def get_filter_options(
 
     # 4. Query chain_master for cascaded Premise Types and Top Chains
     chain_query = f"""
-        SELECT DISTINCT 
-            [Premise Type], 
+        SELECT DISTINCT
+            [Premise Type],
             [Concept Owner Name]
         FROM [{settings.FABRIC_SCHEMA}].[{settings.TABLE_CHAIN_MASTER}]
         {where_stmt}
     """
-    
+
     if params:
         df_chain = execute_query(chain_query, tuple(params))
     else:

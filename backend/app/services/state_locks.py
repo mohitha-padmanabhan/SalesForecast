@@ -110,6 +110,13 @@ def acquire(request, state):
         db.execute('INSERT OR REPLACE INTO holders VALUES (?, ?, ?, ?)', (session, lease, email, time.time() + TTL))
         db.commit()
         return {'owned': True, 'owner': email}
+    except sqlite3.OperationalError as exc:
+        if 'locked' in str(exc).lower() or 'busy' in str(exc).lower():
+            raise HTTPException(
+                503, 'State editing verification is temporarily busy. Please retry.',
+                headers={'Retry-After': '2'},
+            ) from exc
+        raise
     finally:
         db.close()
 

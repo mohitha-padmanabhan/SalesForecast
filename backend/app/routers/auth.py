@@ -27,7 +27,7 @@ def microsoft_login():
     """Redirects user to Microsoft sign-in page."""
     if not settings.AZURE_MS_AUTH_CLIENT_ID or not settings.AZURE_MS_AUTH_CLIENT_SECRET:
         raise HTTPException(
-            status_code=500, 
+            status_code=500,
             detail="Microsoft SSO credentials (AZURE_MS_AUTH_*) are missing in configuration."
         )
 
@@ -50,7 +50,7 @@ def microsoft_callback(request: Request, code: str = Query(None), error: str = Q
         raise HTTPException(400, 'Sign-in session expired. Please sign in again.')
     if error or not code:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail=f"Authentication error: {error or 'No authorization code provided'}"
         )
 
@@ -63,7 +63,7 @@ def microsoft_callback(request: Request, code: str = Query(None), error: str = Q
 
     if "error" in result:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail=result.get("error_description", "Failed to acquire token from Microsoft.")
         )
 
@@ -84,15 +84,9 @@ def microsoft_callback(request: Request, code: str = Query(None), error: str = Q
 
 
 def set_session_cookie(response, token):
-    response.set_cookie(
-        key=state_locks.COOKIE,
-        value=token,
-        httponly=True,
-        samesite="none",
-        max_age=28800,
-        secure=True,
-        path="/"
-    )
+    response.set_cookie(state_locks.COOKIE, token, httponly=True, samesite='lax', max_age=28800,
+                        secure=settings.FRONTEND_URL.startswith('https://'))
+
 class DemoLogin(BaseModel):
     username: str
     password: str

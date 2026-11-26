@@ -49,8 +49,8 @@ function Navbar() {
           {isLoggedIn ? (
             <>
               <li className="navbar-item">
-                <Link 
-                  to="/dashboard" 
+                <Link
+                  to="/dashboard"
                   className={`navbar-link ${location.pathname === '/dashboard' ? 'active' : ''}`}
                   onClick={closeMenu}
                 >
@@ -82,8 +82,8 @@ function Navbar() {
             </>
           ) : (
             <li className="navbar-item">
-              <Link 
-                to="/login" 
+              <Link
+                to="/login"
                 className={`navbar-link login-link ${location.pathname === '/login' ? 'active' : ''}`}
                 onClick={closeMenu}
               >

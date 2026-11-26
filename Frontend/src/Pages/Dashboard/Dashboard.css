@@ -253,7 +253,7 @@ html,body,#root{min-height:100%;height:auto;overflow-y:auto!important;overflow-x
   background: #fff;
 }
 
-.forecast-matrix th, 
+.forecast-matrix th,
 .forecast-matrix td {
   min-width: 95px;
   padding: 8px 6px;
@@ -579,3 +579,65 @@ html,body,#root{min-height:100%;height:auto;overflow-y:auto!important;overflow-x
 .matrix-dialog .forecast-matrix td span{white-space:normal;overflow-wrap:anywhere;font-size:inherit}
 button:disabled{cursor:not-allowed;opacity:.5}
 @media(max-width:700px){.matrix-dialog-overlay{padding:4px}.matrix-dialog{padding:6px}.matrix-note{flex-direction:row;flex-wrap:wrap}.matrix-note .legend{margin-left:0;flex-wrap:wrap}.matrix-dialog .forecast-matrix th,.matrix-dialog .forecast-matrix td{padding:5px 1px;font-size:8px}}
+
+/* Neutral data-type styling for the standard and expanded monthly matrix. */
+.forecast-matrix tbody td,
+.forecast-matrix tbody td.actual-cell,
+.forecast-matrix tbody td.forecast-cell,
+.forecast-matrix tbody td.prev-forecast-cell,
+.forecast-matrix tbody td.budget-cell,
+.forecast-matrix tbody td.year-total {
+  background: #ffffff !important;
+  color: #082744 !important;
+}
+.forecast-matrix tbody th.year-cell {
+  background: #eaf0f5 !important;
+  color: #082744 !important;
+}
+.forecast-matrix .cell-tag.actual,
+.forecast-matrix .cell-tag.forecast,
+.forecast-matrix .cell-tag.previous,
+.forecast-matrix .cell-tag.budget {
+  background: #eaf0f5 !important;
+  color: #082744 !important;
+}
+.forecast-matrix .budget-value,
+.forecast-matrix .budget-total,
+.forecast-matrix .prev-value {
+  color: #082744 !important;
+}
+.matrix-note .dot.actual,
+.matrix-note .dot.forecast,
+.matrix-note .dot.previous,
+.matrix-note .dot.budget {
+  background: #082744 !important;
+}
+
+/* One numeric type style across consensus, statistics, budget and variance. */
+.forecast-matrix {
+  --matrix-value-size: 13px;
+}
+.matrix-dialog .forecast-matrix {
+  --matrix-value-size: clamp(8px, .85vw, 13px);
+}
+.forecast-matrix tbody td > strong,
+.forecast-matrix tbody td > .prev-value,
+.forecast-matrix tbody td > .budget-value,
+.forecast-matrix tbody td > input {
+  font-family: inherit;
+  font-size: var(--matrix-value-size);
+  font-weight: 800;
+  font-style: normal;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+.forecast-matrix tbody th.year-cell {
+  font-family: inherit;
+  font-weight: 800;
+  font-style: normal;
+}
+@media (max-width: 700px) {
+  .matrix-dialog .forecast-matrix {
+    --matrix-value-size: 8px;
+  }
+}

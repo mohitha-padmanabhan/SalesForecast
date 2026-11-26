@@ -1,23 +1,28 @@
 import {useEffect, useRef, useState} from 'react';
 import {acquireStateEdit, releaseStateEdit, fetchStateEditStatus, setEditLease} from '../api/forecastApi';
 
-export default function useStateEditLock(state) {
+export default function useStateEditLock(state, saving = false) {
   const contextRef = useRef(null);
+  const savingRef = useRef(saving);
+  const refreshRef = useRef(null);
+  savingRef.current = saving;
   const [status, setStatus] = useState({owner: null, blocked: false});
   const [heldState, setHeldState] = useState(null);
   const [message, setMessage] = useState('');
   const unrestricted = state === 'All';
 
   useEffect(() => {
-    const context = {state, lease: crypto.randomUUID(), held: false, active: true};
+    const context = {state, lease: crypto.randomUUID(), held: false, active: true, refreshing: false};
     contextRef.current = context;
     setHeldState(null);
     setStatus({owner: null, blocked: false});
     setMessage('');
     const refresh = async () => {
+      if (!context.active || context.refreshing || savingRef.current) return;
+      context.refreshing = true;
+      const lease = context.lease;
       try {
         const renewing = context.held;
-        const lease = context.lease;
         const result = renewing
           ? await acquireStateEdit(state, lease)
           : await fetchStateEditStatus(state);
@@ -25,15 +30,25 @@ export default function useStateEditLock(state) {
           await releaseStateEdit(state, lease);
           return;
         }
-        if (!context.active) return;
-        if (!renewing) setStatus(result);
+        if (!context.active || context.lease !== lease) return;
+        if (renewing) {
+          setHeldState(state);
+          setStatus({owner: result.owner, blocked: false});
+        } else setStatus(result);
+        setMessage('');
       } catch (error) {
-        if (!context.active) return;
-        context.held = false;
+        if (!context.active || context.lease !== lease || savingRef.current) return;
+        const code = error.response?.status;
+        // A temporary failure does not prove the server lease was lost.
+        // Disable editing until renewal succeeds, while retaining the lease to retry.
+        if ([400, 401, 403, 409].includes(code)) context.held = false;
         setHeldState(null);
-        setMessage(error.response?.data?.detail || 'Unable to verify state editing availability.');
+        setMessage(error.response?.data?.detail || 'Editing availability could not be checked. Retrying automatically.');
+      } finally {
+        context.refreshing = false;
       }
     };
+    refreshRef.current = refresh;
     if (!unrestricted) refresh();
     const timer = unrestricted ? null : setInterval(refresh, 10000);
     const leave = () => {
@@ -47,6 +62,10 @@ export default function useStateEditLock(state) {
       if (context.held) releaseStateEdit(state, context.lease, true).catch(() => {});
     };
   }, [state, unrestricted]);
+
+  useEffect(() => {
+    if (!saving && !unrestricted) refreshRef.current?.();
+  }, [saving, unrestricted]);
 
   const ensureEdit = async () => {
     if (unrestricted) return true;

@@ -25,7 +25,7 @@ app.add_middleware(
 )
 
 # Register endpoints
-
+app.include_router(filters.router)
 app.include_router(forecast.router)
 app.include_router(auth.router)
 from app.routers import state_locks

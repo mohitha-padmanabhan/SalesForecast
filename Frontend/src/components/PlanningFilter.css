@@ -1,0 +1,8 @@
+.filter-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:24px;margin-bottom:3px}
+.filter-heading>label{font-size:11px;font-weight:800;color:#4c6680;letter-spacing:.3px}
+.filter-eraser{display:inline-flex;align-items:center;gap:3px;border:0;border-radius:4px;padding:3px 5px;background:transparent;color:#4c6680;cursor:pointer;font:600 10px sans-serif;white-space:nowrap}
+.filter-eraser:hover:not(:disabled){background:#eaf2f8;color:#082744}
+.filter-eraser:focus-visible{outline:2px solid #187db5;outline-offset:2px}
+.filter-eraser:disabled{opacity:.4;cursor:default}
+.filter-field .filter-eraser span{display:inline;font:inherit;color:inherit;letter-spacing:normal}
+.matrix-controls .filter-field{min-width:180px}

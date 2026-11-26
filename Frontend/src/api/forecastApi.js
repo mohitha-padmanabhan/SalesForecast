@@ -1,11 +1,9 @@
 import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ||
-                     'http://localhost:8000/api/v1';
+  'http://localhost:8000/api/v1';
 
 export const AUTH_BASE_URL = API_BASE_URL.replace(/\/api\/v1\/?$/, '');
-
-
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -23,37 +21,56 @@ apiClient.interceptors.request.use(config => {
 });
 export const fetchStateEditStatus = async state => (await apiClient.get('/state-locks/', {params: {state}})).data;
 export const acquireStateEdit = async (state, lease) => (await apiClient.post('/state-locks/acquire', {state}, {headers: {'X-Planning-Lease': lease}})).data;
-export const releaseStateEdit = (state, lease, keepalive = false) => fetch(`${API_BASE_URL}/state-locks/release`, {
-  method: 'POST', credentials: 'include', keepalive,
-  headers: {'Content-Type': 'application/json', 'X-Planning-Lease': lease},
-  body: JSON.stringify({state})
-});
+export const releaseStateEdit = (state, lease, keepalive = false) =>
+  fetch(`${API_BASE_URL}/state-locks/release`, {
+    method: 'POST',
+    credentials: 'include',
+    keepalive,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Planning-Lease': lease,
+    },
+    body: JSON.stringify({state}),
+  });
 export async function verifySession() {
   const response = await fetch(`${AUTH_BASE_URL}/auth/session`, {
-    credentials: 'include'
+    credentials: 'include',
   });
-  if (!response.ok) throw new Error('Please sign in again to edit forecasts.');
+
+  if (!response.ok) {
+    throw new Error('Please sign in again to edit forecasts.');
+  }
+
   return response.json();
 }
+
 export async function demoLogin(username, password) {
   const response = await fetch(`${AUTH_BASE_URL}/auth/demo-login`, {
     method: 'POST',
     credentials: 'include',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({username, password})
+    body: JSON.stringify({username, password}),
   });
-  if (!response.ok) throw new Error('Invalid username or password');
+
+  if (!response.ok) {
+    throw new Error('Invalid username or password');
+  }
+
   return response.json();
 }
+
 export async function endSession() {
   const response = await fetch(`${AUTH_BASE_URL}/auth/logout`, {
     method: 'POST',
-    credentials: 'include'
+    credentials: 'include',
   });
-  if (!response.ok) throw new Error('Sign out could not complete. Please try again.');
+
+  if (!response.ok) {
+    throw new Error('Sign out could not complete. Please try again.');
+  }
+
   clearForecastCache();
 }
-
 // Memory-only cache: bounded, shared across pages, never persisted in browser storage.
 const responses = new Map();
 const pending = new Map();
@@ -93,7 +110,7 @@ function invalidateAfterWrite() {
 // 1. Fetch dynamic filter dropdown options
 export const fetchFilterOptions = async (params = {}) => {
   const queryParams = new URLSearchParams();
-  
+
   if (params.state && params.state !== 'All') {
     queryParams.append('state', params.state);
   }
@@ -144,7 +161,9 @@ export const fetchItemMasterData = async (brand = 'All') => {
 export const fetchExistingDemandPlanIds = async (modalFilters = {}) => {
   // Always fresh: duplicate validation must not depend on a cached grid.
   const response = await apiClient.get('/forecast/existing-ids', {
-    params: {brand: modalFilters.brand || 'All', state: modalFilters.state || 'All'}
+    params: {brand: modalFilters.brandType || 'All', state: modalFilters.state || 'All',
+      chain_status: modalFilters.chainStatus || 'All', premise_type: modalFilters.premiseType || 'All',
+      top_chain: modalFilters.topChain || 'All', date_version: modalFilters.dateVersion}
   });
   return response.data;
 };
@@ -157,15 +176,7 @@ export async function createNewPlanningItem(payload) {
       'X-Planning-Lease': editLease,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      demand_plan_id: payload.demandPlanId,
-      state: payload.state,
-      brand: payload.brand,
-      template_choice: payload.templateChoice,
-      existing_demand_plan_id: payload.existingDemandPlanId || null,
-      date_version: payload.dateVersion,
-      edit_scope: payload.editScope,
-    }),
+    body: JSON.stringify(planningItemPayload(payload)),
   });
 
   if (!response.ok) {
@@ -177,3 +188,16 @@ export async function createNewPlanningItem(payload) {
   invalidateAfterWrite();
   return result;
 }
+function planningItemPayload(payload) {
+  return {
+    demand_plan_id: payload.demandPlanId,
+    state: payload.state || 'All', brand: payload.brand || 'All',
+    chain_status: payload.chainStatus || 'All', premise_type: payload.premiseType || 'All',
+    top_chain: payload.topChain || 'All', date_version: payload.dateVersion,
+    template_choice: payload.templateChoice,
+    existing_demand_plan_id: payload.existingDemandPlanId || null,
+    edit_scope: payload.editScope,
+  };
+}
+export const checkPlanningItemCreation = async payload =>
+  (await apiClient.post('/forecast/creation-check', planningItemPayload(payload))).data;

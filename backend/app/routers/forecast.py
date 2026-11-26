@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, status, Query, Request
 from fastapi.encoders import jsonable_encoder
 from typing import List
 from app.schemas import ItemMasterSchema,AddNewItemPayload
-from app.services.forecast_engine import fetch_item_master_data, create_new_planning_item, fetch_existing_planning_ids
+from app.services.forecast_engine import fetch_item_master_data, create_new_planning_item, fetch_existing_planning_ids, check_new_planning_item
 from app.schemas import FilterParams, SubmitPayload
 from app.services.forecast_engine import run_sql_query_fast, process_and_submit_adjustments
 
@@ -18,7 +18,7 @@ def query_base_forecast(filters: FilterParams):
         return jsonable_encoder(raw_result)  # <--- Fixes Starlette serialization error
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to query forecast data: {str(e)}"
         )
 
@@ -40,7 +40,7 @@ def set_plan_mode(mode: str):
         }
     else:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid planning mode. Allowed values: 'year' or 'month'."
         )
 
@@ -61,13 +61,13 @@ def submit_forecast_changes(payload: SubmitPayload, request: Request):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Fabric database operation failed: {str(e)}"
         )
 
 @router.get("/items")
 def get_item_master_data(brand: str = Query("All")):
-    """Fetch item-master Demand Plan IDs, optionally filtered by bc_brandGroup."""
+    """Fetch item-master Demand Plan IDs, from demand id master, filtered by brandName."""
     try:
         return fetch_item_master_data(brand)
     except Exception as e:
@@ -77,16 +77,25 @@ def get_item_master_data(brand: str = Query("All")):
         )
 
 @router.get("/existing-ids")
-def get_existing_ids(brand: str = Query("All"), state: str = Query("All")):
+def get_existing_ids(brand: str = Query("All"), state: str = Query("All"),
+                     chain_status: str = Query("All"), premise_type: str = Query("All"),
+                     top_chain: str = Query("All"), date_version: str = Query(...)):
     """Return only IDs; avoid full forecast calculations when opening Add Item."""
     try:
-        return fetch_existing_planning_ids(brand, state)
+        return fetch_existing_planning_ids(brand, state, chain_status, premise_type, top_chain, date_version)
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Failed to check existing planning items.") from exc
 
+@router.post('/creation-check')
+def creation_check(payload: AddNewItemPayload):
+    try:
+        return check_new_planning_item(payload)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
 @router.post("/add-item")
 def add_new_planning_item(payload: AddNewItemPayload, request: Request):
-    """Creates a new planning item template in sf.fcstState24mo_locked."""
+    """Creates a new planning item template in sf_fcstState24mo_locked."""
     try:
         scope = payload.edit_scope if payload.edit_scope is not None else payload.state
         if scope != 'All' and scope.strip().upper() != payload.state.strip().upper():
